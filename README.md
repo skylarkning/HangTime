@@ -5,48 +5,83 @@ daily-aggregated hang samples collected from Firefox users, used by the Performa
 team to find and triage main-thread hangs.
 
 This is a from-scratch successor to [fqueze/hang-stats](https://github.com/fqueze/hang-stats),
-rebuilt so the dashboard can evolve without carrying the old tool's constraints.
+rebuilt so the dashboard can grow into a multi-view analytics product (timeseries,
+per-site attribution, regression alerts) without carrying the old tool's constraints.
 
-> **Status: early scaffolding.** The repository is being set up. No app is wired up yet.
+> **Status: v1 explorer working.** Reaches feature parity with hang-stats — an
+> interactive call-tree-style hang explorer over the daily artifact — on a refined UI.
+> Timeseries support (per-hang prevalence over time) is the next milestone.
 
 ## What it does
 
 BHR ships symbolicated, sampled stacks from Firefox to Mozilla's telemetry pipeline.
-A daily aggregation job (now running out of `mozilla-central`) reduces those samples into
-a compact, per-day profile artifact. This dashboard loads that artifact and lets you:
+A daily aggregation job (now running out of `mozilla-central`, via `./mach bhr-aggregate`)
+reduces those samples into a compact, per-day profile artifact. This dashboard loads
+that artifact and lets you:
 
-- Browse hang stacks as an interactive call tree.
-- Filter by text, thread / process type, annotations, runnable, and platform.
-- Normalize hang time and counts by usage hours to estimate real-world impact.
+- Browse the day's hang signatures, ranked by total hang time.
+- Inspect any hang's full symbolicated stack and its annotation breakdown.
+- Filter signatures by function or library name.
+- See hangs merged by known Bugzilla bug (`[bhr:…]` whiteboard tags).
 - Share a view via URL-encoded state.
 
 ## Data
 
-The dashboard consumes the aggregation job's output artifact, a columnar
-profiler-style profile (the same family as the Firefox Profiler's processed format):
+The dashboard consumes the aggregation job's output: a columnar, Firefox-Profiler-style
+profile. Per thread: `stringArray`, `stackTable` (parent-`prefix` linked list rooted at
+`(root)`), `funcTable`, `sampleTable`, `annotationsTable`, `dates[]`, and `libs[]`; plus
+top-level `usageHoursByDate`. See `src/data/schema.ts` for the typed shape.
 
-- `threads[]`, each holding struct-of-arrays tables: `stringArray`, `stackTable`
-  (parent-`prefix` linked list rooted at `(root)`), `funcTable`, `sampleTable`,
-  `annotationsTable`, `dates[]`, and `libs[]`.
-- `usageHoursByDate`, used to normalize raw sample counts.
+The aggregation job already applies the stack-trimming **signature heuristics** upstream
+(`toolkit/components/backgroundhangmonitor/aggregation/heuristics.py`), so the frontend
+treats the stored stack as authoritative and does **not** re-trim. It still performs the
+two merge passes hang-stats always did: dedup identical stacks (across runnable /
+annotation / platform variants) and merge hangs that match the same Bugzilla bug.
 
-Stacks are reconstructed by walking `prefix` pointers; the per-date `sampleHangMs` and
-`sampleHangCount` arrays run parallel to `sampleTable`. Rare stacks are already pruned
-into an `(other)` node by the aggregation job, so the tree arrives pre-trimmed.
+## Architecture
+
+Layered, with each layer swappable:
+
+- **`src/data/`** — `dataSource.ts` is the single point of artifact access (local files
+  in dev, the TaskCluster index URL in prod via `VITE_DATA_BASE`); `schema.ts` types the
+  profile; `bugs.ts` fetches the Bugzilla bug list (best-effort).
+- **`src/processing/`** — heavy compute (stack reconstruction, signature merge) runs in a
+  **Web Worker** (`worker.ts` + Comlink) so the main thread stays responsive on
+  production-scale artifacts. `process.ts` holds the pure logic; `select.ts` does
+  main-thread filtering/frame resolution.
+- **`src/queries/`** — [TanStack Query](https://tanstack.com/query) hooks own all async
+  fetching + caching, keyed by `(thread, date)`.
+- **`src/state/useViewState.ts`** — view + filter state lives in the URL (via the router),
+  so every view is a shareable permalink.
+- **`src/views/`, `src/components/`** — React + TypeScript UI.
+
+Charts (for the upcoming timeseries work) use **Chart.js** behind a swappable component.
 
 ## Tech stack
 
-- **Vite** for dev server and build.
-- **React** for the UI.
-- **Redux** (Redux Toolkit) for application state.
-
-The dashboard starts as a static site that fetches the daily artifact and explores it
-client-side. All data access goes through a single `dataSource` module so a server-backed
-or live-query source can be swapped in later without touching the UI.
+Vite · React · TypeScript · TanStack Query · React Router · Web Worker (Comlink) · Chart.js.
 
 ## Development
 
-Setup instructions will be added once the Vite + React + Redux scaffold lands.
+```bash
+npm install
+# Stage a daily artifact for the dev server (any new-job bhr-aggregate output):
+mkdir -p public/data
+cp /path/to/hangs_main_<date>.json public/data/hangs_main_current.json
+npm run dev          # http://localhost:5173
+```
+
+Other scripts:
+
+```bash
+npm run build        # typecheck + production build to dist/
+npm run typecheck    # tsc only
+npm run verify       # real-browser smoke test (needs `npm run preview` running)
+```
+
+`npm run verify` drives the system Google Chrome via `puppeteer-core` to load the built
+app, wait for the hang table to render, and report any console errors — a quick
+end-to-end check that fetch → worker → React all work.
 
 ## License
 
