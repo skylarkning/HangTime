@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useBugs, useProcessedProfile } from "@/queries/hooks";
+import { useBugs, useProcessedProfile, useTimeseries } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
 import { filterSignatures } from "@/processing/select";
 import { HangTable } from "@/components/HangTable";
@@ -11,6 +11,7 @@ export function Explorer() {
   const { state, update } = useViewState();
   const query = useProcessedProfile(state.thread as ThreadKind, state.date);
   const bugs = useBugs();
+  const timeseries = useTimeseries(state.thread as ThreadKind);
 
   const filtered = useMemo(() => {
     if (!query.data) {
@@ -72,10 +73,16 @@ export function Explorer() {
             filter={state.filter}
             selectedId={state.selected}
             onSelect={(id) => update({ selected: id })}
+            timeseries={timeseries.data}
           />
         </div>
       </div>
-      <DetailPane profile={profile} signature={selected} filter={state.filter} />
+      <DetailPane
+        profile={profile}
+        signature={selected}
+        filter={state.filter}
+        timeseries={timeseries.data}
+      />
     </div>
   );
 }

@@ -1,15 +1,23 @@
 import type { HangSignature, ProcessedProfile } from "@/processing/types";
+import type { TimeseriesIndex } from "@/data/timeseries";
 import { resolveFrames } from "@/processing/select";
 import { isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
+import { TimeseriesChart } from "./TimeseriesChart";
 
 interface DetailPaneProps {
   profile: ProcessedProfile;
   signature: HangSignature | null;
   filter: string;
+  timeseries: TimeseriesIndex | undefined;
 }
 
-export function DetailPane({ profile, signature, filter }: DetailPaneProps) {
+export function DetailPane({
+  profile,
+  signature,
+  filter,
+  timeseries,
+}: DetailPaneProps) {
   if (!signature) {
     return <div className="detail-empty">Select a hang to see its stack.</div>;
   }
@@ -32,6 +40,8 @@ export function DetailPane({ profile, signature, filter }: DetailPaneProps) {
           </div>
         </div>
       )}
+
+      <TimeseriesChart index={timeseries} signature={signature} />
 
       <AnnotationStatsSection signature={signature} />
 

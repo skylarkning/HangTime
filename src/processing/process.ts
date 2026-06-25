@@ -15,6 +15,7 @@
  */
 
 import type { Profile, Thread } from "@/data/schema";
+import { canonicalKey } from "./signatureKey";
 import type {
   AnnotationStats,
   HangSignature,
@@ -148,6 +149,8 @@ export function buildSignatures(
       continue;
     }
 
+    const stableKey = canonicalKey(frameKeys, funcNames, libNames);
+
     // Pass 2: bug-merge — fold distinct stacks that match the same bug.
     let bug: KnownBug | undefined;
     if (bugMatcher) {
@@ -165,6 +168,8 @@ export function buildSignatures(
         mergeInto(bugHang, { i, frameKeys, duration, annotations });
         bugHang.count += count;
         addAnnotations(bugHang.annotationStats, annotations, count);
+        // Distinct stack folded into the bug — record it as a member series.
+        bugHang.memberKeys.push(stableKey);
         bySignature.set(stackKey, bugHang);
         continue;
       }
@@ -180,6 +185,8 @@ export function buildSignatures(
       duration,
       count,
       selfDuration: duration,
+      stableKey,
+      memberKeys: [stableKey],
       annotationStats,
       knownBug: bug,
     };

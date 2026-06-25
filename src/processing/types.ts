@@ -48,6 +48,18 @@ export interface HangSignature {
   count: number;
   /** Highest single-sample duration seen (drives representative selection). */
   selfDuration: number;
+  /**
+   * Stable cross-day key of the representative stack (see signatureKey.ts).
+   * Joins this signature to its timeseries entry.
+   */
+  stableKey: string;
+  /**
+   * Stable keys of every distinct stack merged into this signature. For a
+   * plain signature this is just `[stableKey]`; for a bug-merged signature it
+   * holds one key per contributing stack, so the timeseries view can sum them
+   * into a bug total and break out the top individual stacks.
+   */
+  memberKeys: string[];
   annotationStats: AnnotationStats;
   knownBug?: KnownBug;
 }
