@@ -20,6 +20,7 @@ import {
 } from "@tanstack/react-query";
 import { fetchProfile, type DateSpec, type ThreadKind } from "@/data/dataSource";
 import { fetchBugs, type BugMap } from "@/data/bugs";
+import { fetchTimeseries, type TimeseriesIndex } from "@/data/timeseries";
 import { getProcessor } from "@/processing/client";
 import type { ProcessedProfile } from "@/processing/types";
 
@@ -32,6 +33,21 @@ export function useBugs(): UseQueryResult<BugMap> {
     queryFn: fetchBugs,
     staleTime: BUGS_STALE_MS,
     retry: 2,
+  });
+}
+
+/**
+ * The timeseries artifact for a thread. Best-effort and long-lived: a failure
+ * just disables the per-hang history chart, it never blocks the explorer.
+ */
+export function useTimeseries(
+  thread: ThreadKind,
+): UseQueryResult<TimeseriesIndex> {
+  return useQuery<TimeseriesIndex>({
+    queryKey: ["timeseries", thread],
+    queryFn: () => fetchTimeseries(thread),
+    staleTime: BUGS_STALE_MS,
+    retry: 1,
   });
 }
 

@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import type { HangSignature, ProcessedProfile } from "@/processing/types";
 import { resolveFrames } from "@/processing/select";
+import type { TimeseriesIndex } from "@/data/timeseries";
+import { computeTrend, trendBadge } from "@/data/trend";
 import { formatCount, formatPercentOfTotal, formatSeconds } from "@/format";
 import { frameLabel } from "@/frames";
 import { Highlight } from "./Highlight";
@@ -13,6 +15,7 @@ interface HangTableProps {
   filter: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  timeseries: TimeseriesIndex | undefined;
 }
 
 export function HangTable({
@@ -21,6 +24,7 @@ export function HangTable({
   filter,
   selectedId,
   onSelect,
+  timeseries,
 }: HangTableProps) {
   const totals = useMemo(() => {
     let duration = 0;
@@ -42,19 +46,22 @@ export function HangTable({
           <th className="rank">#</th>
           <th className="num time">Time (s)</th>
           <th className="num count">Count</th>
+          <th className="trend">Trend</th>
           <th>Hang signature (leaf frame)</th>
         </tr>
       </thead>
       <tbody>
         {visible.length === 0 && (
           <tr>
-            <td colSpan={4} style={{ color: "var(--muted)" }}>
+            <td colSpan={5} style={{ color: "var(--muted)" }}>
               No hang matching filter.
             </td>
           </tr>
         )}
         {visible.map((sig, i) => {
           const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
+          const series = timeseries?.resolve(sig.memberKeys);
+          const badge = series ? trendBadge(computeTrend(series, "count")) : null;
           return (
             <tr
               key={sig.id}
@@ -69,6 +76,11 @@ export function HangTable({
                 {formatSeconds(sig.duration)}
               </td>
               <td className="num count">{formatCount(sig.count)}</td>
+              <td className="trend">
+                {badge && (
+                  <span className={`trend-badge ${badge.tone}`}>{badge.text}</span>
+                )}
+              </td>
               <td className="sig">
                 {sig.knownBug ? (
                   <BugCell bug={sig.knownBug} />
@@ -84,6 +96,7 @@ export function HangTable({
             <td className="rank" />
             <td className="num time">{formatSeconds(totals.duration)}</td>
             <td className="num count">{formatCount(totals.count)}</td>
+            <td className="trend" />
             <td>And {remaining.toLocaleString()} more signatures…</td>
           </tr>
         )}
