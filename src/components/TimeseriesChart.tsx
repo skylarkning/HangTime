@@ -29,7 +29,8 @@ import type {
   TimeseriesIndex,
 } from "@/data/timeseries";
 import { computeTrend, trendBadge, type TrendTone } from "@/data/trend";
-import { formatDate } from "@/format";
+import { formatCount, formatDate, formatSeconds } from "@/format";
+import { InfoTip } from "./InfoTip";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip);
 
@@ -120,6 +121,7 @@ function memberLabels(members: MemberSeries[]): string[] {
 
 export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const [metric, setMetric] = useState<Metric>("ms");
+  const [showAll, setShowAll] = useState(false);
 
   const series = useMemo<ResolvedSeries | null>(
     () => (index ? index.resolve(signature.memberKeys) : null),
@@ -198,6 +200,10 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     legend.push({ label, title, color });
   };
 
+  // Labels are computed across ALL members (not just the charted top-5) so the
+  // legend and the "show all" list stay consistent.
+  const memberLabelsAll = showMembers ? memberLabels(series.members) : [];
+
   if (showMembers) {
     const bug = signature.knownBug;
     addLine(
@@ -207,11 +213,9 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       TOTAL_COLOR,
       { borderWidth: 2.5 },
     );
-    const shown = series.members.slice(0, MAX_MEMBER_LINES);
-    const labels = memberLabels(shown);
-    shown.forEach((member, i) => {
+    series.members.slice(0, MAX_MEMBER_LINES).forEach((member, i) => {
       addLine(
-        `#${i + 1} ${labels[i]}`,
+        `#${i + 1} ${memberLabelsAll[i]}`,
         stackPath(member),
         pick(member),
         MEMBER_COLORS[i % MEMBER_COLORS.length],
@@ -271,7 +275,18 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   return (
     <div className="detail-section">
       <div className="ts-header">
-        <h3>History ({series.dates.length} days)</h3>
+        <h3>
+          History ({series.dates.length} days)
+          <InfoTip label="History">
+            Daily hang time (or count) for this signature across the window, so
+            you can see if it’s rising, spiking, or newly appeared. Use the
+            ms/count toggle to switch metric.
+            <span className="eg">
+              The dot marks the peak day; dashed lines are the top contributing
+              stacks for a bug.
+            </span>
+          </InfoTip>
+        </h3>
         <div className="ts-toggle">
           <button
             className={metric === "ms" ? "active" : ""}
@@ -309,10 +324,47 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
         ))}
       </div>
       {showMembers && (
-        <p className="muted">
-          {series.members.length} stacks merged into this bug; showing the top{" "}
-          {Math.min(series.members.length, MAX_MEMBER_LINES)}.
-        </p>
+        <div className="member-detail">
+          <p className="muted">
+            {series.members.length} stacks merged into this bug
+            {series.members.length > MAX_MEMBER_LINES && (
+              <> · showing the top {MAX_MEMBER_LINES} on the chart</>
+            )}
+            .
+            {series.members.length > MAX_MEMBER_LINES && (
+              <>
+                {" "}
+                <button className="link" onClick={() => setShowAll((v) => !v)}>
+                  {showAll ? "Show fewer" : `Show all ${series.members.length}`}
+                </button>
+              </>
+            )}
+          </p>
+          {showAll && (
+            <ol className="member-list">
+              {series.members.map((member, i) => (
+                <li key={member.key} title={stackPath(member)}>
+                  <span
+                    className="member-rank"
+                    style={{
+                      color:
+                        i < MAX_MEMBER_LINES
+                          ? MEMBER_COLORS[i % MEMBER_COLORS.length]
+                          : "var(--muted-2)",
+                    }}
+                  >
+                    #{i + 1}
+                  </span>
+                  <span className="member-name">{memberLabelsAll[i]}</span>
+                  <span className="member-stat">
+                    {formatSeconds(member.totalMs)}s ·{" "}
+                    {formatCount(member.totalCount)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       )}
     </div>
   );

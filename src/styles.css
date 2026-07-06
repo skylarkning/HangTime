@@ -75,6 +75,15 @@ nav.tabs button:not(:disabled):hover { color: var(--text); }
   border-radius: 5px; font: inherit; color: var(--text); background: var(--surface);
 }
 .filter-bar input[type="text"]:focus { outline: none; border-color: var(--blue); }
+.filter-bar .control {
+  display: flex; align-items: center; gap: 5px; flex: none;
+  color: var(--muted); font-size: 12px; white-space: nowrap;
+}
+.filter-bar .control select {
+  font: inherit; font-size: 12px; padding: 5px 6px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+}
+.filter-bar .control select:disabled { color: var(--muted-2); background: var(--surface-alt); }
 .filter-bar .summary { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .filter-bar .summary strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
@@ -131,6 +140,15 @@ table.hangs tr.footer td { color: var(--muted); font-style: italic; background: 
 }
 .ts-toggle button.active { background: var(--blue); color: #fff; }
 .ts-chart { height: 220px; }
+
+.report-actions { display: flex; gap: 8px; margin-top: 10px; }
+.btn {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px;
+  border-radius: 5px; border: 1px solid var(--blue); background: var(--blue);
+  color: #fff; text-decoration: none; cursor: pointer; display: inline-block;
+}
+.btn:hover { filter: brightness(1.05); }
+.btn.secondary { background: var(--surface); color: var(--blue); }
 .ts-legend {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -186,10 +204,49 @@ table.hangs .trend { width: 4.5em; }
   border-bottom: 1px solid var(--border);
 }
 .banner.warn { background: #fff5e6; color: var(--orange); }
-.banner .link {
+.link {
   background: none; border: none; font: inherit; color: var(--blue);
   cursor: pointer; padding: 0; text-decoration: underline;
 }
+
+.member-detail { margin-top: 10px; }
+.member-list {
+  margin-top: 8px; max-height: 260px; overflow-y: auto;
+  list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 12px;
+}
+.member-list li {
+  display: flex; align-items: baseline; gap: 8px; padding: 3px 0; min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+.member-list li:last-child { border-bottom: none; }
+.member-rank { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.member-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-family: var(--mono);
+}
+.member-stat { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.infotip { position: relative; display: inline-flex; vertical-align: middle; }
+.infotip-btn {
+  margin-left: 4px; width: 13px; height: 13px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--muted-2); background: transparent; color: var(--muted);
+  font: italic 700 9px/1 Georgia, "Times New Roman", serif; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.infotip-btn:hover { color: var(--blue); border-color: var(--blue); }
+.infotip-pop {
+  position: fixed; z-index: 50;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); padding: 10px 12px;
+  font: 400 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-transform: none; letter-spacing: normal; text-align: left;
+}
+.infotip-pop code {
+  background: var(--surface-alt); padding: 1px 4px; border-radius: 3px;
+  font-family: var(--mono); font-size: 11px;
+}
+.infotip-pop .eg { display: block; margin-top: 6px; color: var(--muted); }
 
 .state-msg { padding: 40px; text-align: center; color: var(--muted); }
 .state-msg.error { color: var(--red); }

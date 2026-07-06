@@ -74,6 +74,18 @@ function readAnnotations(
   return annotations;
 }
 
+/** Resolve a sample's platform (OS) string. */
+function readPlatform(thread: Thread, sampleIndex: number): string {
+  return thread.stringArray[thread.sampleTable.platform[sampleIndex]] ?? "";
+}
+
+/** Add `count` to a value's bucket in a string histogram. */
+function addCount(hist: Record<string, number>, key: string, count: number): void {
+  if (key) {
+    hist[key] = (hist[key] ?? 0) + count;
+  }
+}
+
 function addAnnotations(
   stats: AnnotationStats,
   annotations: Record<string, string>,
@@ -138,6 +150,7 @@ export function buildSignatures(
     const duration = Math.round(sampleHangMs[i]);
     const count = Math.round(sampleHangCount[i]);
     const annotations = readAnnotations(thread, i);
+    const platform = readPlatform(thread, i);
     const stackKey = frameKeys.join(",");
 
     // Pass 1: dedup identical stacks.
@@ -146,6 +159,7 @@ export function buildSignatures(
       mergeInto(existing, { i, frameKeys, duration, annotations });
       existing.count += count;
       addAnnotations(existing.annotationStats, annotations, count);
+      addCount(existing.platformStats, platform, count);
       continue;
     }
 
@@ -168,6 +182,7 @@ export function buildSignatures(
         mergeInto(bugHang, { i, frameKeys, duration, annotations });
         bugHang.count += count;
         addAnnotations(bugHang.annotationStats, annotations, count);
+        addCount(bugHang.platformStats, platform, count);
         // Distinct stack folded into the bug — record it as a member series.
         bugHang.memberKeys.push(stableKey);
         bySignature.set(stackKey, bugHang);
@@ -188,6 +203,7 @@ export function buildSignatures(
       stableKey,
       memberKeys: [stableKey],
       annotationStats,
+      platformStats: platform ? { [platform]: count } : {},
       knownBug: bug,
     };
     signatures.push(sig);

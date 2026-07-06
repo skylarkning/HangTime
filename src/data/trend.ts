@@ -15,6 +15,8 @@ import type { Metric, ResolvedSeries } from "./timeseries";
 
 export type TrendTone = "red" | "amber" | "green" | "blue" | "neutral";
 
+export type TrendCategory = "regression" | "improvement" | "new" | "stable";
+
 export interface TrendSummary {
   /** Signed fraction (0.74 = +74%), or null when the prior window was zero. */
   changePct: number | null;
@@ -97,6 +99,23 @@ export function computeTrend(
     peakValue: primary[peakIndex],
     trackedStacks: series.members.length,
   };
+}
+
+/** Bucket a trend for list filtering. Mirrors the badge thresholds. */
+export function trendCategory(trend: TrendSummary): TrendCategory {
+  if (trend.isNew) {
+    return "new";
+  }
+  if (trend.changePct === null) {
+    return trend.recentAvg > 0 ? "regression" : "stable";
+  }
+  if (trend.changePct >= ELEVATED_PCT) {
+    return "regression";
+  }
+  if (trend.changePct <= -ELEVATED_PCT) {
+    return "improvement";
+  }
+  return "stable";
 }
 
 /** Compact badge text + color tone for a trend, e.g. list rows. */
