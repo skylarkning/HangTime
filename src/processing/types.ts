@@ -61,6 +61,8 @@ export interface HangSignature {
    */
   memberKeys: string[];
   annotationStats: AnnotationStats;
+  /** Per-signature OS histogram (platform string -> summed hang count). */
+  platformStats: Record<string, number>;
   knownBug?: KnownBug;
 }
 

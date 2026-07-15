@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import type { HangSignature, ProcessedProfile } from "@/processing/types";
 import { resolveFrames } from "@/processing/select";
-import type { TimeseriesIndex } from "@/data/timeseries";
-import { computeTrend, trendBadge } from "@/data/trend";
+import { trendBadge, type TrendSummary } from "@/data/trend";
 import { formatCount, formatPercentOfTotal, formatSeconds } from "@/format";
 import { frameLabel } from "@/frames";
 import { Highlight } from "./Highlight";
+import { InfoTip } from "./InfoTip";
 
 const MAX_ROWS = 50;
 
@@ -15,7 +15,7 @@ interface HangTableProps {
   filter: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  timeseries: TimeseriesIndex | undefined;
+  trendById: Map<string, TrendSummary | null>;
 }
 
 export function HangTable({
@@ -24,7 +24,7 @@ export function HangTable({
   filter,
   selectedId,
   onSelect,
-  timeseries,
+  trendById,
 }: HangTableProps) {
   const totals = useMemo(() => {
     let duration = 0;
@@ -44,9 +44,39 @@ export function HangTable({
       <thead>
         <tr>
           <th className="rank">#</th>
-          <th className="num time">Time (s)</th>
-          <th className="num count">Count</th>
-          <th className="trend">Trend</th>
+          <th className="num time">
+            Time (s)
+            <InfoTip label="Time (s)">
+              Total time Firefox’s main thread spent hanging on this signature
+              during the day, in seconds — every sampled hang’s duration summed.
+              <span className="eg">
+                e.g. <code>837</code> = 837 seconds of cumulative
+                unresponsiveness across sampled users that day.
+              </span>
+            </InfoTip>
+          </th>
+          <th className="num count">
+            Count
+            <InfoTip label="Count">
+              How many hangs matched this signature in the day’s sampled BHR
+              reports. Each is one main-thread stall.
+              <span className="eg">
+                e.g. <code>1,773</code> = 1,773 recorded hang occurrences.
+              </span>
+            </InfoTip>
+          </th>
+          <th className="trend">
+            Trend
+            <InfoTip label="Trend">
+              Change in this hang’s activity: its recent 7-day average vs the
+              previous 7 days. <code>↑</code> getting worse, <code>↓</code>{" "}
+              improving, <code>new</code> = little or no earlier activity.
+              <span className="eg">
+                e.g. <code>↑74%</code> = ~74% more hang activity than the prior
+                week.
+              </span>
+            </InfoTip>
+          </th>
           <th>Hang signature (leaf frame)</th>
         </tr>
       </thead>
@@ -60,8 +90,8 @@ export function HangTable({
         )}
         {visible.map((sig, i) => {
           const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
-          const series = timeseries?.resolve(sig.memberKeys);
-          const badge = series ? trendBadge(computeTrend(series, "count")) : null;
+          const trend = trendById.get(sig.id) ?? null;
+          const badge = trend ? trendBadge(trend) : null;
           return (
             <tr
               key={sig.id}

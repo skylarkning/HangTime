@@ -42,6 +42,7 @@ export interface MemberSeries {
   ms: number[];
   count: number[];
   totalMs: number;
+  totalCount: number;
 }
 
 /** Resolved series for a (possibly bug-merged) signature. */
@@ -88,6 +89,7 @@ export class TimeseriesIndex {
         ms: sig.ms,
         count: sig.count,
         totalMs: sig.totalMs,
+        totalCount: sig.totalCount,
       });
     }
     if (members.length === 0) {

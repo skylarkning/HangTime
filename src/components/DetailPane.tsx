@@ -1,8 +1,13 @@
-import type { HangSignature, ProcessedProfile } from "@/processing/types";
+import { useState } from "react";
+import type { Frame, HangSignature, ProcessedProfile } from "@/processing/types";
 import type { TimeseriesIndex } from "@/data/timeseries";
+import { computeTrend, trendBadge } from "@/data/trend";
+import { buildBugReport } from "@/data/bugReport";
 import { resolveFrames } from "@/processing/select";
+import { formatDate } from "@/format";
 import { isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
+import { InfoTip } from "./InfoTip";
 import { TimeseriesChart } from "./TimeseriesChart";
 
 interface DetailPaneProps {
@@ -23,6 +28,16 @@ export function DetailPane({
   }
   const frames = resolveFrames(profile, signature.frameKeys);
 
+  let trendNote: string | undefined;
+  const series = timeseries?.resolve(signature.memberKeys);
+  if (series) {
+    const badge = trendBadge(computeTrend(series, "ms"));
+    trendNote =
+      badge.text === "stable" || badge.text === "new"
+        ? badge.text
+        : `${badge.text} vs prior 7d`;
+  }
+
   return (
     <div className="detail-pane">
       {signature.knownBug && (
@@ -42,6 +57,15 @@ export function DetailPane({
       )}
 
       <TimeseriesChart index={timeseries} signature={signature} />
+
+      <FileBugSection
+        signature={signature}
+        frames={frames}
+        date={profile.date}
+        trendNote={trendNote}
+      />
+
+      <PlatformSection signature={signature} />
 
       <AnnotationStatsSection signature={signature} />
 
@@ -68,6 +92,115 @@ export function DetailPane({
   );
 }
 
+function FileBugSection({
+  signature,
+  frames,
+  date,
+  trendNote,
+}: {
+  signature: HangSignature;
+  frames: Frame[];
+  date: string;
+  trendNote?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const report = buildBugReport({
+    frames,
+    count: signature.count,
+    durationMs: signature.duration,
+    date: formatDate(date),
+    trendNote,
+    permalink: window.location.href,
+  });
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(report.comment);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  if (signature.knownBug) {
+    return (
+      <div className="detail-section">
+        <h3>File a bug</h3>
+        <p className="muted">
+          Already tracked by Bug {signature.knownBug.id}.{" "}
+          <button className="link" onClick={copy}>
+            {copied ? "Copied" : "Copy hang summary"}
+          </button>{" "}
+          to add current data to it.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="detail-section">
+      <h3>File a bug</h3>
+      <p className="muted">
+        Files with whiteboard tag <code>{report.whiteboard}</code>, so the
+        dashboard auto-merges matching hangs from the next run.
+      </p>
+      <div className="report-actions">
+        <a className="btn" href={report.url} target="_blank" rel="noreferrer">
+          File Bugzilla bug…
+        </a>
+        <button className="btn secondary" onClick={copy}>
+          {copied ? "Copied" : "Copy comment"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const OS_LABELS: Record<string, string> = {
+  Windows: "Windows",
+  Darwin: "macOS",
+  Linux: "Linux",
+};
+
+function PlatformSection({ signature }: { signature: HangSignature }) {
+  const entries = Object.entries(signature.platformStats).sort(
+    (a, b) => b[1] - a[1],
+  );
+  if (entries.length === 0) {
+    return null;
+  }
+  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  const pct = (n: number) =>
+    (n / total).toLocaleString(undefined, {
+      style: "percent",
+      minimumFractionDigits: 1,
+    });
+
+  return (
+    <div className="detail-section">
+      <h3>
+        Platform
+        <InfoTip label="Platform">
+          Share of this signature’s hangs by operating system, weighted by hang
+          count.
+          <span className="eg">
+            e.g. <code>Windows 75.8%</code> = most of these hangs came from
+            Windows users.
+          </span>
+        </InfoTip>
+      </h3>
+      <ul className="annotation-list">
+        {entries.map(([os, count]) => (
+          <li key={os}>
+            <code>{OS_LABELS[os] ?? os}</code>{" "}
+            <span className="pct">
+              {pct(count)} ({count.toLocaleString()} hangs)
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AnnotationStatsSection({ signature }: { signature: HangSignature }) {
   const entries = Object.entries(signature.annotationStats).sort(
     (a, b) => b[1].totalCount - a[1].totalCount,
@@ -83,7 +216,14 @@ function AnnotationStatsSection({ signature }: { signature: HangSignature }) {
 
   return (
     <div className="detail-section">
-      <h3>Hang annotations</h3>
+      <h3>
+        Hang annotations
+        <InfoTip label="Hang annotations">
+          Context flags Firefox recorded with the hang (e.g.{" "}
+          <code>UserInteracting</code> = the user was actively interacting). The
+          percentage is the share of this signature’s hangs carrying that flag.
+        </InfoTip>
+      </h3>
       <ul className="annotation-list">
         {entries.map(([key, stat]) => {
           const values = Object.entries(stat.values);
