@@ -67,6 +67,8 @@ export function DetailPane({
 
       <PlatformSection signature={signature} />
 
+      <AffectedClientsSection profile={profile} signature={signature} />
+
       <AnnotationStatsSection signature={signature} />
 
       <div className="detail-section">
@@ -193,6 +195,61 @@ function PlatformSection({ signature }: { signature: HangSignature }) {
             <code>{OS_LABELS[os] ?? os}</code>{" "}
             <span className="pct">
               {pct(count)} ({count.toLocaleString()} hangs)
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AffectedClientsSection({
+  profile,
+  signature,
+}: {
+  profile: ProcessedProfile;
+  signature: HangSignature;
+}) {
+  const c = signature.affectedClients;
+  const total = profile.affectedClientsTotal;
+  const pct = (n: number, d: number) =>
+    d > 0
+      ? (n / d).toLocaleString(undefined, {
+          style: "percent",
+          minimumFractionDigits: 1,
+        })
+      : "n/a";
+  const hllDelta = c.raw > 0 ? (c.hll - c.raw) / c.raw : 0;
+  const deltaLabel = `${hllDelta >= 0 ? "+" : ""}${(hllDelta * 100).toFixed(1)}%`;
+
+  const rows: { label: string; n: number; d: number; note: string }[] = [
+    { label: "Raw client_id", n: c.raw, d: total.raw, note: "exact, ground truth" },
+    { label: "Salted hash", n: c.hashed, d: total.hashed, note: "exact, privacy-safe" },
+    { label: "HyperLogLog", n: c.hll, d: total.hll, note: `estimate, Δ vs exact ${deltaLabel}` },
+  ];
+
+  return (
+    <div className="detail-section">
+      <h3>
+        Affected clients (3-way)
+        <InfoTip label="Affected clients">
+          Distinct users hitting this hang, counted three ways for comparison: raw{" "}
+          <code>client_id</code> (exact ground truth), a salted hash of{" "}
+          <code>client_id</code> (exact and privacy-safe), and a HyperLogLog
+          estimate (approximate, cheap, mergeable). Raw and hash should match; the
+          HLL row shows the approximation error. Percentages are of the day’s
+          distinct clients.
+        </InfoTip>
+        {profile.affectedClientsSynthetic && (
+          <span className="pct"> (synthetic data)</span>
+        )}
+      </h3>
+      <ul className="annotation-list">
+        {rows.map((r) => (
+          <li key={r.label}>
+            <code>{r.label}</code>{" "}
+            <span className="pct">
+              {r.n.toLocaleString()} ({pct(r.n, r.d)}) — {r.note}
             </span>
           </li>
         ))}

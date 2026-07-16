@@ -1,6 +1,8 @@
 /** Derived types produced by the processing layer (worker) from a Profile. */
 
-import type { FuncIndex, SampleIndex } from "@/data/schema";
+import type { AffectedClientCounts, FuncIndex, SampleIndex } from "@/data/schema";
+
+export type { AffectedClientCounts };
 
 /** A resolved stack frame: a function index plus its display strings. */
 export interface Frame {
@@ -63,6 +65,8 @@ export interface HangSignature {
   annotationStats: AnnotationStats;
   /** Per-signature OS histogram (platform string -> summed hang count). */
   platformStats: Record<string, number>;
+  /** Distinct affected clients, counted raw / salted-hash / HLL for comparison. */
+  affectedClients: AffectedClientCounts;
   knownBug?: KnownBug;
 }
 
@@ -81,4 +85,8 @@ export interface ProcessedProfile {
   signatures: HangSignature[];
   totalDuration: number;
   totalCount: number;
+  /** Day's distinct-client totals per method (denominator for the % metric). */
+  affectedClientsTotal: AffectedClientCounts;
+  /** True when the counts are dashboard-synthesized (no --client-metrics data). */
+  affectedClientsSynthetic: boolean;
 }

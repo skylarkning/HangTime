@@ -92,10 +92,34 @@ export interface Thread {
   dates: DateData[];
 }
 
+/** Distinct-client counts computed three ways, for the affected-users metric. */
+export interface AffectedClientCounts {
+  /** Exact distinct count of raw client_id (ground truth; local experiment only). */
+  raw: number;
+  /** Exact distinct count of salted-hashed client_id (privacy-safe; should equal raw). */
+  hashed: number;
+  /** HyperLogLog estimate of distinct clients (approximate; cheap and mergeable). */
+  hll: number;
+}
+
+/**
+ * Optional affected-clients block emitted by the experimental
+ * `bhr-aggregate --client-metrics` run. Keyed by the canonical signature key
+ * (see signatureKey.ts) so the frontend can attach counts to each signature.
+ * When absent, the dashboard synthesizes placeholder numbers (dev only).
+ */
+export interface AffectedClientsArtifact {
+  /** Day's distinct-client totals per method; the denominator for the % metric. */
+  totalDistinct: AffectedClientCounts;
+  bySignature: Record<string, AffectedClientCounts>;
+}
+
 /** Top-level shape of a `hangs_<thread>_<date>.json` artifact. */
 export interface Profile {
   threads: Thread[];
   /** Maps a build-date string ("20260525") to usage hours for normalization. */
   usageHoursByDate: Record<string, number>;
   uuid: string;
+  /** Present only from a `--client-metrics` run; see AffectedClientsArtifact. */
+  affectedClients?: AffectedClientsArtifact;
 }
