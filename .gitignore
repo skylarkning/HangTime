@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 # Local dev data artifacts (fetched/copied, not committed)
 public/data/
+
+# macOS
+.DS_Store
