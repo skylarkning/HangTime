@@ -1,4 +1,5 @@
 import { formatDate } from "@/format";
+import bhrLogo from "@/assets/bhr-logo.png";
 
 const TABS = [
   { id: "top-hangs", label: "Top Hangs", enabled: true },
@@ -17,7 +18,7 @@ export function Header({ date, thread }: HeaderProps) {
   return (
     <header className="top">
       <div className="brand">
-        <div className="logo" />
+        <img className="logo" src={bhrLogo} alt="" aria-hidden="true" />
         BHR Dashboard
         <span className="subtitle">Background Hang Reporter</span>
       </div>
