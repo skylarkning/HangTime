@@ -67,6 +67,8 @@ export function DetailPane({
 
       <PlatformSection signature={signature} />
 
+      <AffectedUsersTrendSection signature={signature} timeseries={timeseries} />
+
       <AffectedClientsSection profile={profile} signature={signature} />
 
       <AnnotationStatsSection signature={signature} />
@@ -195,6 +197,56 @@ function PlatformSection({ signature }: { signature: HangSignature }) {
             <code>{OS_LABELS[os] ?? os}</code>{" "}
             <span className="pct">
               {pct(count)} ({count.toLocaleString()} hangs)
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AffectedUsersTrendSection({
+  signature,
+  timeseries,
+}: {
+  signature: HangSignature;
+  timeseries: TimeseriesIndex | undefined;
+}) {
+  const resolved = timeseries?.resolveAffected(signature.memberKeys);
+  if (!resolved) {
+    return null;
+  }
+  const pct = (n: number) =>
+    n.toLocaleString(undefined, {
+      style: "percent",
+      minimumFractionDigits: 2,
+    });
+
+  return (
+    <div className="detail-section">
+      <h3>
+        Users affected over time
+        <InfoTip label="Users affected over time">
+          Share of distinct users who hit this hang over the trailing 7, 30, and
+          365 days, from the rolling roll-up. Per-day HyperLogLog sketches are
+          merged across the window, so a user who hangs on many days counts once.
+          The denominator is all users seen in that same window.
+          {resolved.approximate && (
+            <span className="eg">
+              This row merges several stacks; their user sets cannot be unioned
+              from the published counts, so the totals are summed as an upper
+              bound.
+            </span>
+          )}
+        </InfoTip>
+      </h3>
+      <ul className="annotation-list">
+        {resolved.windows.map((w) => (
+          <li key={w.key}>
+            <code>{w.label}</code>{" "}
+            <span className="pct">
+              {pct(w.pct)} ({w.users.toLocaleString()} of{" "}
+              {w.totalUsers.toLocaleString()} users)
             </span>
           </li>
         ))}
