@@ -1,8 +1,29 @@
 /** Derived types produced by the processing layer (worker) from a Profile. */
 
-import type { AffectedClientCounts, FuncIndex, SampleIndex } from "@/data/schema";
+import type {
+  AffectedClientCounts,
+  FramePair,
+  FuncIndex,
+  SampleIndex,
+} from "@/data/schema";
 
 export type { AffectedClientCounts };
+
+/** A signature's membership in a near-duplicate leaf-frame group. */
+export interface LeafGroupInfo {
+  /** The group's readable name (shared leaf plus branch context). */
+  displayName: string;
+  /** How many near-duplicate signatures the group collapses. */
+  memberCount: number;
+  /** Total hang ms across the whole group. */
+  totalMs: number;
+  /** Total hang count across the whole group. */
+  totalCount: number;
+  /** This signature's earliest distinguishing frame within the group. */
+  firstUniqueFrame: FramePair | null;
+  /** Deepest frame shared by the whole group. */
+  branchFrame: FramePair;
+}
 
 /** A resolved stack frame: a function index plus its display strings. */
 export interface Frame {
@@ -89,4 +110,10 @@ export interface ProcessedProfile {
   affectedClientsTotal: AffectedClientCounts;
   /** True when the counts are dashboard-synthesized (no --client-metrics data). */
   affectedClientsSynthetic: boolean;
+  /**
+   * Leaf-frame group membership keyed by signature key, for signatures that are
+   * members of a multi-member group. Absent when the artifact carried no
+   * leaf-grouping data.
+   */
+  leafGroupByKey?: Record<string, LeafGroupInfo>;
 }

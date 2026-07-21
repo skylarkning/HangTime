@@ -114,6 +114,38 @@ export interface AffectedClientsArtifact {
   bySignature: Record<string, AffectedClientCounts>;
 }
 
+/** A `[funcName, libName]` frame pair, leaf -> root order. */
+export type FramePair = [string, string];
+
+/** One signature folded into a leaf-frame group. */
+export interface LeafGroupMember {
+  /** Canonical signature key (see signatureKey.ts) of this member. */
+  key: string;
+  ms: number;
+  count: number;
+  /** Earliest frame that separates this member from its siblings, or null. */
+  firstUniqueFrame: FramePair | null;
+}
+
+/**
+ * A group of near-duplicate signatures sharing a leaf frame, produced by the
+ * aggregation job's leaf-frame grouping pass. Only multi-member groups are
+ * emitted; the frontend joins by member key and does no fuzzy matching.
+ */
+export interface LeafGroup {
+  /** Readable name: the leaf, plus its deepest shared caller when they differ. */
+  displayName: string;
+  leafFrame: FramePair;
+  /** Frames shared by every member, leaf -> branch point. */
+  commonTrunk: FramePair[];
+  /** Deepest frame shared by the whole group (the branch point's context). */
+  branchFrame: FramePair;
+  memberCount: number;
+  totalMs: number;
+  totalCount: number;
+  members: LeafGroupMember[];
+}
+
 /** Top-level shape of a `hangs_<thread>_<date>.json` artifact. */
 export interface Profile {
   threads: Thread[];
@@ -122,4 +154,6 @@ export interface Profile {
   uuid: string;
   /** Present only from a `--client-metrics` run; see AffectedClientsArtifact. */
   affectedClients?: AffectedClientsArtifact;
+  /** Near-duplicate leaf-frame groups per thread name, when grouping ran. */
+  leafGroups?: Record<string, LeafGroup[]>;
 }

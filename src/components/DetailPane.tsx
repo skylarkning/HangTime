@@ -58,6 +58,8 @@ export function DetailPane({
 
       <TimeseriesChart index={timeseries} signature={signature} />
 
+      <LeafGroupSection profile={profile} signature={signature} />
+
       <FileBugSection
         signature={signature}
         frames={frames}
@@ -152,6 +154,55 @@ function FileBugSection({
           {copied ? "Copied" : "Copy comment"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function LeafGroupSection({
+  profile,
+  signature,
+}: {
+  profile: ProcessedProfile;
+  signature: HangSignature;
+}) {
+  const group = profile.leafGroupByKey?.[signature.stableKey];
+  if (!group) {
+    return null;
+  }
+  const others = group.memberCount - 1;
+  const unique = group.firstUniqueFrame?.[0];
+
+  return (
+    <div className="detail-section">
+      <h3>
+        Near-duplicate group
+        <InfoTip label="Near-duplicate group">
+          The aggregation job groups signatures that share this leaf frame and
+          only diverge deeper in the stack, so one row stands in for a pile of
+          near-identical hangs. The group is named by its shared leaf and the
+          deepest frame the whole group has in common. The distinguishing frame
+          is the earliest point where this particular stack parts from its
+          siblings.
+        </InfoTip>
+      </h3>
+      <ul className="annotation-list">
+        <li>
+          <code>{group.displayName}</code>{" "}
+          <span className="pct">
+            {group.memberCount.toLocaleString()} near-duplicate stacks,{" "}
+            {Math.round(group.totalMs).toLocaleString()} ms total
+          </span>
+        </li>
+        {unique && (
+          <li>
+            Distinguishing frame{" "}
+            <span className="pct">
+              <code>{unique}</code>
+              {others > 0 && ` (vs ${others.toLocaleString()} sibling${others === 1 ? "" : "s"})`}
+            </span>
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

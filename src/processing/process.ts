@@ -21,6 +21,7 @@ import type {
   AnnotationStats,
   HangSignature,
   KnownBug,
+  LeafGroupInfo,
   ProcessedProfile,
 } from "./types";
 
@@ -238,7 +239,37 @@ export function buildSignatures(
     totalCount,
     affectedClientsTotal: affected.total,
     affectedClientsSynthetic: affected.synthetic,
+    leafGroupByKey: buildLeafGroupLookup(profile, thread.name),
   };
+}
+
+/**
+ * Index the aggregation job's leaf-frame groups by member signature key, so a
+ * selected hang can show whether it belongs to a near-duplicate group and what
+ * distinguishes it. Returns undefined when the artifact carried no grouping.
+ */
+function buildLeafGroupLookup(
+  profile: Profile,
+  threadName: string,
+): Record<string, LeafGroupInfo> | undefined {
+  const groups = profile.leafGroups?.[threadName];
+  if (!groups) {
+    return undefined;
+  }
+  const byKey: Record<string, LeafGroupInfo> = {};
+  for (const group of groups) {
+    for (const member of group.members) {
+      byKey[member.key] = {
+        displayName: group.displayName,
+        memberCount: group.memberCount,
+        totalMs: group.totalMs,
+        totalCount: group.totalCount,
+        firstUniqueFrame: member.firstUniqueFrame,
+        branchFrame: group.branchFrame,
+      };
+    }
+  }
+  return byKey;
 }
 
 /** Deterministic 32-bit FNV-1a hash, for reproducible synthetic perturbation. */
