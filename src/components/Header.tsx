@@ -52,6 +52,7 @@ export function Header({ date, thread }: HeaderProps) {
       <div className="header-right">
         {date && <span className="pill live">Build {formatDate(date)}</span>}
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
+        <span className="version">Dashboard Version: V1.0 Alpha</span>
       </div>
     </header>
   );

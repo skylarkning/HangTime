@@ -60,6 +60,7 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
 }
 .pill.live { color: var(--green); }
 .pill.live::before { content: "\25CF"; margin-right: 4px; }
+.version { font-size: 11px; color: var(--muted-2); white-space: nowrap; }
 
 /* Explorer master-detail layout */
 .explorer { display: grid; grid-template-columns: 1fr 42%; flex: 1; min-height: 0; }
