@@ -17,11 +17,11 @@ const DATA_BASE = (import.meta.env.VITE_DATA_BASE as string | undefined) ?? "dat
  */
 export interface WindowCounts {
   d7: number;
-  d30: number;
+  d28: number;
   d365: number;
 }
 
-/** One signature's daily series; `ms`/`count` run parallel to `dates`. */
+/** One signature's daily series; `ms`/`count`/`affected` run parallel to `dates`. */
 export interface TimeseriesSignature {
   /** Representative stack as `[funcName, libName]` pairs, leaf -> root. */
   frames: [string, string][];
@@ -29,7 +29,9 @@ export interface TimeseriesSignature {
   totalCount: number;
   ms: number[];
   count: number[];
-  /** Distinct users affected over 7/30/365 days (absent without client metrics). */
+  /** Distinct users affected on each day (absent without client metrics). */
+  affected?: number[];
+  /** Distinct users affected over 7/28/365 days (absent without client metrics). */
   affectedUsers?: WindowCounts;
   /** affectedUsers / total window users, in [0, 1] (absent without client metrics). */
   affectedPct?: WindowCounts;
@@ -45,13 +47,15 @@ export interface TimeseriesArtifact {
   signatures: TimeseriesSignature[];
   /** Distinct users seen in each window, the shared denominator. */
   totalUsers?: WindowCounts;
+  /** Distinct users seen on each day, parallel to `dates` (daily denominator). */
+  totalAffected?: number[];
 }
 
 /** The trailing windows the roll-up reports, in ascending length. */
 export const AFFECTED_WINDOWS = [
-  { key: "d7" as const, days: 7, label: "7 days" },
-  { key: "d30" as const, days: 30, label: "30 days" },
-  { key: "d365" as const, days: 365, label: "365 days" },
+  { key: "d7" as const, days: 7, label: "7-Day" },
+  { key: "d28" as const, days: 28, label: "28-Day" },
+  { key: "d365" as const, days: 365, label: "365-Day" },
 ];
 
 /** A signature's affected-user share resolved for one trailing window. */
@@ -92,8 +96,14 @@ export interface MemberSeries {
 /** Resolved series for a (possibly bug-merged) signature. */
 export interface ResolvedSeries {
   dates: string[];
-  /** Element-wise sum across all present members. */
-  total: { ms: number[]; count: number[] };
+  /**
+   * Element-wise sum across all present members. `affected` is present only
+   * when the artifact carried client metrics; for a bug-merged signature it is
+   * a per-member sum (an upper bound, since day sketches aren't unioned here).
+   */
+  total: { ms: number[]; count: number[]; affected?: number[] };
+  /** Distinct users across all signatures on each day (daily denominator). */
+  totalAffected?: number[];
   /** Present member series, sorted by descending total ms. */
   members: MemberSeries[];
 }
@@ -101,11 +111,13 @@ export interface ResolvedSeries {
 export class TimeseriesIndex {
   readonly dates: string[];
   readonly totalUsers: WindowCounts | undefined;
+  readonly totalAffected: number[] | undefined;
   private readonly byKey: Map<string, TimeseriesSignature>;
 
   constructor(artifact: TimeseriesArtifact) {
     this.dates = artifact.dates;
     this.totalUsers = artifact.totalUsers;
+    this.totalAffected = artifact.totalAffected;
     this.byKey = new Map();
     for (const sig of artifact.signatures) {
       this.byKey.set(canonicalKeyFromFrames(sig.frames), sig);
@@ -155,36 +167,51 @@ export class TimeseriesIndex {
    * if none of the members are present.
    */
   resolve(memberKeys: string[]): ResolvedSeries | null {
-    const members: MemberSeries[] = [];
+    const present: TimeseriesSignature[] = [];
     for (const key of memberKeys) {
       const sig = this.byKey.get(key);
-      if (!sig) {
-        continue;
+      if (sig) {
+        present.push(sig);
       }
-      members.push({
-        key,
-        label: sig.frames[0]?.[0] ?? "(root)",
-        frames: sig.frames,
-        ms: sig.ms,
-        count: sig.count,
-        totalMs: sig.totalMs,
-        totalCount: sig.totalCount,
-      });
     }
-    if (members.length === 0) {
+    if (present.length === 0) {
       return null;
     }
-    members.sort((a, b) => b.totalMs - a.totalMs);
+    present.sort((a, b) => b.totalMs - a.totalMs);
+
+    const members: MemberSeries[] = present.map((sig) => ({
+      key: canonicalKeyFromFrames(sig.frames),
+      label: sig.frames[0]?.[0] ?? "(root)",
+      frames: sig.frames,
+      ms: sig.ms,
+      count: sig.count,
+      totalMs: sig.totalMs,
+      totalCount: sig.totalCount,
+    }));
 
     const n = this.dates.length;
-    const total = { ms: new Array(n).fill(0), count: new Array(n).fill(0) };
-    for (const member of members) {
+    const total: ResolvedSeries["total"] = {
+      ms: new Array(n).fill(0),
+      count: new Array(n).fill(0),
+    };
+    const hasAffected = present.some((sig) => sig.affected);
+    const affected = hasAffected ? new Array<number>(n).fill(0) : undefined;
+    for (const sig of present) {
       for (let i = 0; i < n; i++) {
-        total.ms[i] += member.ms[i] ?? 0;
-        total.count[i] += member.count[i] ?? 0;
+        total.ms[i] += sig.ms[i] ?? 0;
+        total.count[i] += sig.count[i] ?? 0;
+        if (affected) {
+          affected[i] += sig.affected?.[i] ?? 0;
+        }
       }
     }
-    return { dates: this.dates, total, members };
+    total.affected = affected;
+    return {
+      dates: this.dates,
+      total,
+      totalAffected: this.totalAffected,
+      members,
+    };
   }
 }
 

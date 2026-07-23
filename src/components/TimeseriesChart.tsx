@@ -257,6 +257,22 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             const unit = metric === "ms" ? "ms" : "hangs";
             return `${ctx.dataset.label}: ${value.toLocaleString()} ${unit}`;
           },
+          // Append that single day's distinct affected users (and share of the
+          // day's users) when the artifact carried client metrics.
+          afterBody: (items) => {
+            const affected = series.total.affected;
+            if (!affected) {
+              return "";
+            }
+            const i = items[0]?.dataIndex ?? 0;
+            const users = affected[i] ?? 0;
+            const dayTotal = series.totalAffected?.[i];
+            const share =
+              dayTotal && dayTotal > 0
+                ? ` (${((users / dayTotal) * 100).toFixed(2)}% of users)`
+                : "";
+            return `Affected users: ${users.toLocaleString()}${share}`;
+          },
         },
       },
     },
@@ -283,7 +299,8 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             ms/count toggle to switch metric.
             <span className="eg">
               The dot marks the peak day; dashed lines are the top contributing
-              stacks for a bug.
+              stacks for a bug. Hover a day to also see the distinct users
+              affected that day.
             </span>
           </InfoTip>
         </h3>
