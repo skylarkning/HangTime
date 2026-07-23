@@ -11,6 +11,8 @@ export type { AffectedClientCounts };
 
 /** A signature's membership in a near-duplicate leaf-frame group. */
 export interface LeafGroupInfo {
+  /** Stable id of the group (its leaf frame), shared by all its members. */
+  groupKey: string;
   /** The group's readable name (shared leaf plus branch context). */
   displayName: string;
   /** How many near-duplicate signatures the group collapses. */

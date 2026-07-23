@@ -15,7 +15,7 @@
  */
 
 import type { Profile, Thread } from "@/data/schema";
-import { canonicalKey } from "./signatureKey";
+import { canonicalKey, canonicalKeyFromFrames } from "./signatureKey";
 import type {
   AffectedClientCounts,
   AnnotationStats,
@@ -258,8 +258,10 @@ function buildLeafGroupLookup(
   }
   const byKey: Record<string, LeafGroupInfo> = {};
   for (const group of groups) {
+    const groupKey = canonicalKeyFromFrames([group.leafFrame]);
     for (const member of group.members) {
       byKey[member.key] = {
+        groupKey,
         displayName: group.displayName,
         memberCount: group.memberCount,
         totalMs: group.totalMs,
