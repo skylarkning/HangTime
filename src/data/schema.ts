@@ -125,12 +125,23 @@ export interface LeafGroupMember {
   count: number;
   /** Earliest frame that separates this member from its siblings, or null. */
   firstUniqueFrame: FramePair | null;
+  /**
+   * Canonical key of this member's *meaningful* frames. Members sharing a
+   * variantKey are the same hang differing only in skipped noise frames, so
+   * the frontend collapses them into one deduplicated member.
+   */
+  variantKey: string;
 }
 
 /**
  * A group of near-duplicate signatures sharing a leaf frame, produced by the
  * aggregation job's leaf-frame grouping pass. Only multi-member groups are
  * emitted; the frontend joins by member key and does no fuzzy matching.
+ *
+ * Grouping is by each stack's first *meaningful* frame (system code, sync /
+ * allocator primitives, SpiderMonkey glue, and event-loop machinery are
+ * skipped), so `leafFrame`, `commonTrunk`, `branchFrame`, and each member's
+ * `firstUniqueFrame` are meaningful frames, not the raw stack leaf.
  */
 export interface LeafGroup {
   /** Readable name: the leaf, plus its deepest shared caller when they differ. */
@@ -143,6 +154,8 @@ export interface LeafGroup {
   memberCount: number;
   totalMs: number;
   totalCount: number;
+  /** Mean nested event-loop depth across members (loops trimmed from the leaf). */
+  avgEventLoopDepth: number;
   members: LeafGroupMember[];
 }
 

@@ -23,6 +23,7 @@ import type {
   KnownBug,
   LeafGroupInfo,
   ProcessedProfile,
+  ResolvedGroup,
 } from "./types";
 
 /** Maps a bug `[bhr:...]` signature substring to its bug. */
@@ -143,6 +144,9 @@ export function buildSignatures(
   // A bug's chosen representative signature, so distinct stacks merge into it.
   const byBug = new Map<number, HangSignature>();
   const signatures: HangSignature[] = [];
+  // Every distinct stack's frames, by canonical key, so a leaf-group member can
+  // be resolved to its stack even when it was folded into another signature.
+  const framesByKey = new Map<string, number[]>();
 
   const sampleCount = thread.sampleTable.length;
   const { sampleHangMs, sampleHangCount } = day;
@@ -166,6 +170,9 @@ export function buildSignatures(
     }
 
     const stableKey = canonicalKey(frameKeys, funcNames, libNames);
+    if (!framesByKey.has(stableKey)) {
+      framesByKey.set(stableKey, frameKeys);
+    }
 
     // Pass 2: bug-merge — fold distinct stacks that match the same bug.
     let bug: KnownBug | undefined;
@@ -227,6 +234,15 @@ export function buildSignatures(
 
   const affected = attachAffectedClients(profile, signatures);
 
+  // Canonical stack key -> the displayed signature it belongs to, so clicking a
+  // group member (which may be a stack folded into a bug row) can select it.
+  const sigIdByKey: Record<string, string> = {};
+  for (const sig of signatures) {
+    for (const key of sig.memberKeys) {
+      sigIdByKey[key] = sig.id;
+    }
+  }
+
   return {
     threadName: thread.name,
     processType: thread.processType,
@@ -240,7 +256,48 @@ export function buildSignatures(
     affectedClientsTotal: affected.total,
     affectedClientsSynthetic: affected.synthetic,
     leafGroupByKey: buildLeafGroupLookup(profile, thread.name),
+    groupsByKey: buildResolvedGroups(profile, thread.name, framesByKey),
+    sigIdByKey,
   };
+}
+
+/**
+ * Resolve each leaf group's own member list (from the artifact) to frames,
+ * keyed by groupKey. Unlike buildLeafGroupLookup this keeps every member even
+ * when several were folded into one displayed signature, so the detail pane can
+ * list and diff all of them.
+ */
+function buildResolvedGroups(
+  profile: Profile,
+  threadName: string,
+  framesByKey: Map<string, number[]>,
+): Record<string, ResolvedGroup> | undefined {
+  const groups = profile.leafGroups?.[threadName];
+  if (!groups) {
+    return undefined;
+  }
+  const byGroup: Record<string, ResolvedGroup> = {};
+  for (const group of groups) {
+    const groupKey = canonicalKeyFromFrames([group.leafFrame]);
+    byGroup[groupKey] = {
+      groupKey,
+      displayName: group.displayName,
+      memberCount: group.memberCount,
+      totalMs: group.totalMs,
+      totalCount: group.totalCount,
+      avgEventLoopDepth: group.avgEventLoopDepth ?? 0,
+      branchFrame: group.branchFrame,
+      members: group.members.map((m) => ({
+        key: m.key,
+        ms: m.ms,
+        count: m.count,
+        firstUniqueFrame: m.firstUniqueFrame,
+        variantKey: m.variantKey ?? m.key,
+        frameKeys: framesByKey.get(m.key) ?? [],
+      })),
+    };
+  }
+  return byGroup;
 }
 
 /**
@@ -268,6 +325,8 @@ function buildLeafGroupLookup(
         totalCount: group.totalCount,
         firstUniqueFrame: member.firstUniqueFrame,
         branchFrame: group.branchFrame,
+        avgEventLoopDepth: group.avgEventLoopDepth ?? 0,
+        variantKey: member.variantKey ?? member.key,
       };
     }
   }

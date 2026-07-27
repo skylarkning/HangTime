@@ -1,13 +1,20 @@
-import { useState } from "react";
-import type { Frame, HangSignature, ProcessedProfile } from "@/processing/types";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  Frame,
+  HangSignature,
+  ProcessedProfile,
+  ResolvedGroupMember,
+} from "@/processing/types";
+import type { FramePair } from "@/data/schema";
 import type { TimeseriesIndex } from "@/data/timeseries";
 import { computeTrend, trendBadge } from "@/data/trend";
 import { buildBugReport } from "@/data/bugReport";
 import { resolveFrames } from "@/processing/select";
-import { formatDate } from "@/format";
-import { isOwnCode } from "@/frames";
+import { formatCount, formatDate, formatSeconds } from "@/format";
+import { frameLabel, isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
+import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
 
 interface DetailPaneProps {
@@ -15,6 +22,7 @@ interface DetailPaneProps {
   signature: HangSignature | null;
   filter: string;
   timeseries: TimeseriesIndex | undefined;
+  onSelect: (id: string) => void;
 }
 
 export function DetailPane({
@@ -22,6 +30,7 @@ export function DetailPane({
   signature,
   filter,
   timeseries,
+  onSelect,
 }: DetailPaneProps) {
   if (!signature) {
     return <div className="detail-empty">Select a hang to see its stack.</div>;
@@ -58,7 +67,12 @@ export function DetailPane({
 
       <TimeseriesChart index={timeseries} signature={signature} />
 
-      <LeafGroupSection profile={profile} signature={signature} />
+      <LeafGroupSection
+        profile={profile}
+        signature={signature}
+        filter={filter}
+        onSelect={onSelect}
+      />
 
       <FileBugSection
         signature={signature}
@@ -158,51 +172,295 @@ function FileBugSection({
   );
 }
 
+/** One collapsed near-duplicate variant: group members with an identical
+ * meaningful stack, folded into a single deduplicated row. */
+interface GroupVariant {
+  variantKey: string;
+  /** Highest-ms member, the row's inspect/compare target. */
+  rep: ResolvedGroupMember;
+  /** How many raw members folded into this variant. */
+  memberCount: number;
+  duration: number;
+  count: number;
+  firstUniqueFrame: FramePair | null;
+  containsSelected: boolean;
+}
+
 function LeafGroupSection({
   profile,
   signature,
+  filter,
+  onSelect,
 }: {
   profile: ProcessedProfile;
   signature: HangSignature;
+  filter: string;
+  onSelect: (id: string) => void;
 }) {
-  const group = profile.leafGroupByKey?.[signature.stableKey];
+  const info = profile.leafGroupByKey?.[signature.stableKey];
+  const groupKey = info?.groupKey;
+  const group = groupKey ? profile.groupsByKey?.[groupKey] : undefined;
+
+  // Every member of the group, ranked by hang time. Sourced from the group's
+  // own member list (resolved to frames), NOT from the merged signature list,
+  // so members that were folded into another row (e.g. a bug) are still here.
+  const members = useMemo(
+    () => (group ? [...group.members].sort((a, b) => b.ms - a.ms) : []),
+    [group],
+  );
+
+  // Collapse members by meaningful-stack variant: members that differ only in
+  // skipped noise frames (same variantKey) are the same hang and fold into one
+  // row. Variants that truly diverge stay distinct, each labeled by its branch
+  // frame. "Show individual stacks" drops back to the raw list so a merge can
+  // be checked frame by frame.
+  const variants = useMemo<GroupVariant[]>(() => {
+    const byVariant = new Map<string, GroupVariant>();
+    for (const m of members) {
+      const vk = m.variantKey || m.key;
+      let v = byVariant.get(vk);
+      if (!v) {
+        v = {
+          variantKey: vk,
+          rep: m,
+          memberCount: 0,
+          duration: 0,
+          count: 0,
+          firstUniqueFrame: m.firstUniqueFrame,
+          containsSelected: false,
+        };
+        byVariant.set(vk, v);
+      }
+      v.memberCount += 1;
+      v.duration += m.ms;
+      v.count += m.count;
+      if (m.ms > v.rep.ms) {
+        v.rep = m;
+      }
+      if (m.key === signature.stableKey) {
+        v.containsSelected = true;
+      }
+    }
+    return [...byVariant.values()].sort((a, b) => b.duration - a.duration);
+  }, [members, signature.stableKey]);
+
+  // The section starts folded to the group name; a compare selection (max two)
+  // drives the side-by-side stack diff. All reset when the selected signature
+  // moves to a different group.
+  const [open, setOpen] = useState(false);
+  const [showIndividual, setShowIndividual] = useState(false);
+  const [compare, setCompare] = useState<string[]>([]);
+  const [showDiff, setShowDiff] = useState(false);
+  useEffect(() => {
+    setOpen(false);
+    setShowIndividual(false);
+    setCompare([]);
+    setShowDiff(false);
+  }, [groupKey]);
+
   if (!group) {
     return null;
   }
-  const others = group.memberCount - 1;
-  const unique = group.firstUniqueFrame?.[0];
+
+  const memberByKey = new Map(members.map((m) => [m.key, m]));
+  const toggleCompare = (key: string) =>
+    setCompare((prev) => {
+      if (prev.includes(key)) {
+        return prev.filter((x) => x !== key);
+      }
+      return prev.length >= 2 ? prev : [...prev, key];
+    });
+
+  const rawLeafLabel = (m: ResolvedGroupMember): string =>
+    frameLabel(resolveFrames(profile, m.frameKeys.slice(0, 1))[0]);
+  const singleVariant = variants.length === 1;
+  const variantLabel = (v: GroupVariant): string => {
+    const f = v.firstUniqueFrame;
+    if (!f) {
+      return "identical (differs only in system / event-loop frames)";
+    }
+    return f[1] ? `${f[0]} ${f[1]}` : f[0];
+  };
+  // A group member's stack belongs to a displayed signature (its own row, or a
+  // bug it was folded into); clicking inspects that signature.
+  const selectMember = (m: ResolvedGroupMember) => {
+    const id = profile.sigIdByKey?.[m.key];
+    if (id) {
+      onSelect(id);
+    }
+  };
+  const compareRow = (key: string) => {
+    const checked = compare.includes(key);
+    return { checked, disabled: !checked && compare.length >= 2 };
+  };
+  // Compare is keyed by member; each side carries that member's frames so any
+  // two individual stacks can be diffed, even ones folded into the same row.
+  const diffSides = compare
+    .map((k) => memberByKey.get(k))
+    .filter((m): m is ResolvedGroupMember => !!m)
+    .map((m) => ({ frameKeys: m.frameKeys, label: rawLeafLabel(m) }));
+
+  // The raw per-member list (for single-variant groups and the "individual
+  // stacks" view): labeled by raw leaf so noise differences are visible.
+  const rawList = (
+    <ul className="group-members">
+      {members.map((m) => {
+        const { checked, disabled } = compareRow(m.key);
+        return (
+          <li
+            key={m.key}
+            className={`group-member${m.key === signature.stableKey ? " selected" : ""}`}
+          >
+            <input
+              type="checkbox"
+              className="compare-box"
+              checked={checked}
+              disabled={disabled}
+              title={
+                disabled ? "Two stacks already selected" : "Select to compare (pick two)"
+              }
+              onChange={() => toggleCompare(m.key)}
+            />
+            <button className="group-member-main" onClick={() => selectMember(m)}>
+              <span className="member-arrow">↳</span>
+              <Highlight text={rawLeafLabel(m)} needle={filter} />
+            </button>
+            <span className="group-member-stat">
+              {formatSeconds(m.ms)}s · {formatCount(m.count)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return (
     <div className="detail-section">
       <h3>
         Near-duplicate group
         <InfoTip label="Near-duplicate group">
-          The aggregation job groups signatures that share this leaf frame and
-          only diverge deeper in the stack, so one row stands in for a pile of
-          near-identical hangs. The group is named by its shared leaf and the
-          deepest frame the whole group has in common. The distinguishing frame
-          is the earliest point where this particular stack parts from its
-          siblings.
+          The aggregation job groups signatures by their first <em>meaningful</em>{" "}
+          frame: system code, lock / allocator primitives, SpiderMonkey glue, and
+          event-loop machinery are skipped so a pile of hangs that are really the
+          same Firefox problem collapse together even when the raw leaf (a sleep,
+          a <code>memcpy</code>, a <code>free</code>) differs. The whole group is
+          one row in the list; open it here to see the distinct variants (each
+          labeled by its branch frame), show every individual stack, or tick two
+          and diff them to confirm the merge is right.
         </InfoTip>
       </h3>
-      <ul className="annotation-list">
-        <li>
-          <code>{group.displayName}</code>{" "}
-          <span className="pct">
-            {group.memberCount.toLocaleString()} near-duplicate stacks,{" "}
-            {Math.round(group.totalMs).toLocaleString()} ms total
+      <button
+        className="group-toggle"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span className={`disclosure ${open ? "open" : ""}`}>▸</span>
+        <span className="group-toggle-name">
+          <Highlight text={group.displayName} needle={filter} />
+        </span>
+        <span className="group-badge">{group.memberCount.toLocaleString()} stacks</span>
+        {group.avgEventLoopDepth >= 0.05 && (
+          <span
+            className="group-badge"
+            title="Average number of nested event loops on the stack across this group's members"
+          >
+            ~{group.avgEventLoopDepth.toFixed(1)} event loops
           </span>
-        </li>
-        {unique && (
-          <li>
-            Distinguishing frame{" "}
-            <span className="pct">
-              <code>{unique}</code>
-              {others > 0 && ` (vs ${others.toLocaleString()} sibling${others === 1 ? "" : "s"})`}
-            </span>
-          </li>
         )}
-      </ul>
+      </button>
+      {open && (
+        <>
+          {singleVariant ? (
+            <>
+              <p className="muted group-note">
+                All {members.length.toLocaleString()} stacks are the same hang,
+                differing only in system, allocator, or event-loop frames. Compare
+                any two below to confirm.
+              </p>
+              {rawList}
+            </>
+          ) : showIndividual ? (
+            rawList
+          ) : (
+            <ul className="group-members">
+              {variants.map((v) => {
+                const { checked, disabled } = compareRow(v.rep.key);
+                return (
+                  <li
+                    key={v.variantKey}
+                    className={`group-member${v.containsSelected ? " selected" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="compare-box"
+                      checked={checked}
+                      disabled={disabled}
+                      title={
+                        disabled
+                          ? "Two stacks already selected"
+                          : "Select to compare (pick two)"
+                      }
+                      onChange={() => toggleCompare(v.rep.key)}
+                    />
+                    <button
+                      className="group-member-main"
+                      onClick={() => selectMember(v.rep)}
+                    >
+                      <span className="member-arrow">↳</span>
+                      <Highlight text={variantLabel(v)} needle={filter} />
+                      {v.memberCount > 1 && (
+                        <span className="variant-count">×{v.memberCount}</span>
+                      )}
+                    </button>
+                    <span className="group-member-stat">
+                      {formatSeconds(v.duration)}s · {formatCount(v.count)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {!singleVariant && members.length > variants.length && (
+            <button
+              className="link group-individual-toggle"
+              onClick={() => setShowIndividual((v) => !v)}
+            >
+              {showIndividual
+                ? `Show ${variants.length.toLocaleString()} merged variants`
+                : `Show all ${members.length.toLocaleString()} individual stacks`}
+            </button>
+          )}
+          {members.length >= 2 && (
+            <div className="group-compare">
+              <span>
+                {compare.length === 2
+                  ? "2 stacks selected"
+                  : "Tick two stacks to compare"}
+              </span>
+              <button
+                className="btn"
+                disabled={compare.length !== 2}
+                onClick={() => setShowDiff(true)}
+              >
+                Compare stacks →
+              </button>
+              {compare.length > 0 && (
+                <button className="link" onClick={() => setCompare([])}>
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {showDiff && diffSides.length === 2 && (
+        <StackDiff
+          profile={profile}
+          a={diffSides[0]}
+          b={diffSides[1]}
+          onClose={() => setShowDiff(false)}
+        />
+      )}
     </div>
   );
 }

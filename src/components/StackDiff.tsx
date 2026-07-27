@@ -7,9 +7,8 @@
  */
 
 import { useEffect } from "react";
-import type { Frame, HangSignature, ProcessedProfile } from "@/processing/types";
+import type { Frame, ProcessedProfile } from "@/processing/types";
 import { resolveFrames } from "@/processing/select";
-import { distinguishingLabel } from "@/processing/grouping";
 import { frameLabel } from "@/frames";
 
 interface DiffRow {
@@ -61,10 +60,16 @@ function diffFrames(a: Frame[], b: Frame[]): DiffRow[] {
   return rows;
 }
 
+/** One side of the diff: a stack (funcTable indices, leaf -> root) and a label. */
+export interface DiffSide {
+  frameKeys: number[];
+  label: string;
+}
+
 interface StackDiffProps {
   profile: ProcessedProfile;
-  a: HangSignature;
-  b: HangSignature;
+  a: DiffSide;
+  b: DiffSide;
   onClose: () => void;
 }
 
@@ -102,10 +107,10 @@ export function StackDiff({ profile, a, b, onClose }: StackDiffProps) {
             <tr>
               <th className="diff-mark" />
               <th>
-                A · <span className="diff-distinct">{distinguishingLabel(profile, a)}</span>
+                A · <span className="diff-distinct">{a.label}</span>
               </th>
               <th>
-                B · <span className="diff-distinct">{distinguishingLabel(profile, b)}</span>
+                B · <span className="diff-distinct">{b.label}</span>
               </th>
             </tr>
           </thead>

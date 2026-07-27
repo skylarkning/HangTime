@@ -25,6 +25,43 @@ export interface LeafGroupInfo {
   firstUniqueFrame: FramePair | null;
   /** Deepest frame shared by the whole group. */
   branchFrame: FramePair;
+  /** Mean nested event-loop depth across the group's members. */
+  avgEventLoopDepth: number;
+  /**
+   * Canonical key of this signature's meaningful frames. Signatures sharing it
+   * are the same hang differing only in noise, and collapse into one member.
+   */
+  variantKey: string;
+}
+
+/**
+ * A leaf-group member resolved for display: the artifact's per-member fields
+ * plus the member's representative stack frames, looked up by canonical key.
+ */
+export interface ResolvedGroupMember {
+  key: string;
+  ms: number;
+  count: number;
+  firstUniqueFrame: FramePair | null;
+  variantKey: string;
+  /** Representative stack (funcTable indices, leaf -> root) for this member. */
+  frameKeys: FuncIndex[];
+}
+
+/**
+ * A near-duplicate group resolved for the detail pane. Built from the artifact's
+ * own member list (not from merged signatures), so every member is present even
+ * when several were folded into one displayed signature (e.g. a bug row).
+ */
+export interface ResolvedGroup {
+  groupKey: string;
+  displayName: string;
+  memberCount: number;
+  totalMs: number;
+  totalCount: number;
+  avgEventLoopDepth: number;
+  branchFrame: FramePair;
+  members: ResolvedGroupMember[];
 }
 
 /** A resolved stack frame: a function index plus its display strings. */
@@ -118,4 +155,12 @@ export interface ProcessedProfile {
    * leaf-grouping data.
    */
   leafGroupByKey?: Record<string, LeafGroupInfo>;
+  /**
+   * Near-duplicate groups keyed by groupKey, with every member resolved to its
+   * frames. Drives the detail-pane member list and stack diff, independent of
+   * how signatures were merged for the list.
+   */
+  groupsByKey?: Record<string, ResolvedGroup>;
+  /** Canonical stack key -> the displayed signature id that stack belongs to. */
+  sigIdByKey?: Record<string, string>;
 }

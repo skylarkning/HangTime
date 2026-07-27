@@ -1,6 +1,6 @@
-import type { HangSignature, ProcessedProfile } from "@/processing/types";
-import type { GroupRow, ListRow } from "@/processing/grouping";
-import { distinguishingLabel } from "@/processing/grouping";
+import { useMemo } from "react";
+import type { ProcessedProfile } from "@/processing/types";
+import type { ListRow } from "@/processing/grouping";
 import { resolveFrames } from "@/processing/select";
 import { trendBadge, type TrendSummary } from "@/data/trend";
 import { formatCount, formatPercentOfTotal, formatSeconds } from "@/format";
@@ -17,12 +17,6 @@ interface HangTableProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   trendById: Map<string, TrendSummary | null>;
-  /** groupKeys currently unfolded. */
-  expanded: Set<string>;
-  onToggleGroup: (groupKey: string) => void;
-  /** signature ids chosen for the side-by-side diff (max 2). */
-  compare: string[];
-  onToggleCompare: (id: string) => void;
 }
 
 export function HangTable({
@@ -32,11 +26,17 @@ export function HangTable({
   selectedId,
   onSelect,
   trendById,
-  expanded,
-  onToggleGroup,
-  compare,
-  onToggleCompare,
 }: HangTableProps) {
+  const totals = useMemo(() => {
+    let duration = 0;
+    let count = 0;
+    for (const row of rows) {
+      duration += row.duration;
+      count += row.count;
+    }
+    return { duration, count };
+  }, [rows]);
+
   const visible = rows.slice(0, MAX_ROWS);
   const remaining = rows.length - visible.length;
 
@@ -50,31 +50,41 @@ export function HangTable({
             <InfoTip label="Time (s)">
               Total time Firefox’s main thread spent hanging on this signature
               during the day, in seconds — every sampled hang’s duration summed.
-              For a group, the summed time across its near-duplicate members.
+              <span className="eg">
+                e.g. <code>837</code> = 837 seconds of cumulative
+                unresponsiveness across sampled users that day.
+              </span>
             </InfoTip>
           </th>
           <th className="num count">
             Count
             <InfoTip label="Count">
               How many hangs matched this signature in the day’s sampled BHR
-              reports. For a group, summed across its members.
+              reports. Each is one main-thread stall.
+              <span className="eg">
+                e.g. <code>1,773</code> = 1,773 recorded hang occurrences.
+              </span>
             </InfoTip>
           </th>
           <th className="trend">
             Trend
             <InfoTip label="Trend">
               Change in this hang’s activity: its recent 7-day average vs the
-              previous 7 days. <code>↑</code> worse, <code>↓</code> improving,{" "}
-              <code>new</code> = little earlier activity.
+              previous 7 days. <code>↑</code> getting worse, <code>↓</code>{" "}
+              improving, <code>new</code> = little or no earlier activity.
+              <span className="eg">
+                e.g. <code>↑74%</code> = ~74% more hang activity than the prior
+                week.
+              </span>
             </InfoTip>
           </th>
           <th>
-            Hang signature (leaf frame)
-            <InfoTip label="Grouping">
-              Near-duplicate hangs that share a leaf frame are folded into one{" "}
-              group. Click a group to unfold its individual signatures and their
-              distinguishing frame, then tick two to compare their stacks
-              side by side.
+            Hang signature
+            <InfoTip label="Hang signature">
+              The hang's first meaningful frame (system code, lock / allocator
+              primitives, SpiderMonkey glue, and event-loop machinery are looked
+              past). Signatures that are the same hang differing only in that
+              noise are merged into one row, tagged <code>×N</code>.
             </InfoTip>
           </th>
         </tr>
@@ -87,188 +97,64 @@ export function HangTable({
             </td>
           </tr>
         )}
-        {visible.map((row, i) =>
-          row.kind === "group" ? (
-            <GroupRows
-              key={row.groupKey}
-              row={row}
-              rank={i + 1}
-              profile={profile}
-              filter={filter}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              trendById={trendById}
-              open={expanded.has(row.groupKey)}
-              onToggle={() => onToggleGroup(row.groupKey)}
-              compare={compare}
-              onToggleCompare={onToggleCompare}
-            />
-          ) : (
-            <SignatureRow
-              key={row.sig.id}
-              sig={row.sig}
-              rank={`${i + 1}`}
-              profile={profile}
-              filter={filter}
-              selected={row.sig.id === selectedId}
-              onSelect={onSelect}
-              trend={trendById.get(row.sig.id) ?? null}
-            />
-          ),
-        )}
-        {remaining > 0 && (
-          <tr className="footer">
-            <td className="rank" />
-            <td className="num time" />
-            <td className="num count" />
-            <td className="trend" />
-            <td>And {remaining.toLocaleString()} more rows…</td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-  );
-}
-
-function GroupRows({
-  row,
-  rank,
-  profile,
-  filter,
-  selectedId,
-  onSelect,
-  trendById,
-  open,
-  onToggle,
-  compare,
-  onToggleCompare,
-}: {
-  row: GroupRow;
-  rank: number;
-  profile: ProcessedProfile;
-  filter: string;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  trendById: Map<string, TrendSummary | null>;
-  open: boolean;
-  onToggle: () => void;
-  compare: string[];
-  onToggleCompare: (id: string) => void;
-}) {
-  return (
-    <>
-      <tr className="group-row" onClick={onToggle}>
-        <td className="rank">
-          <span className={`disclosure ${open ? "open" : ""}`}>▸</span>
-          {rank}
-        </td>
-        <td
-          className="num time"
-          title={`${formatPercentOfTotal(row.duration, profile.totalDuration)} of total hang time`}
-        >
-          {formatSeconds(row.duration)}
-        </td>
-        <td className="num count">{formatCount(row.count)}</td>
-        <td className="trend" />
-        <td className="sig">
-          <span className="group-name">
-            <Highlight text={row.displayName} needle={filter} />
-          </span>
-          <span className="group-badge">{row.members.length} stacks</span>
-        </td>
-      </tr>
-      {open &&
-        row.members.map((sig) => {
-          const checked = compare.includes(sig.id);
-          const disabled = !checked && compare.length >= 2;
-          const badge = (() => {
-            const t = trendById.get(sig.id) ?? null;
-            return t ? trendBadge(t) : null;
-          })();
+        {visible.map((row, i) => {
+          const sig = row.rep;
+          // Label by the group's meaningful frame when this hang is grouped, so
+          // the list reads by real subsystem (js::Stringify, ...) instead of the
+          // raw leaf primitive (memcpy / free / SleepConditionVariableSRW).
+          const group = profile.leafGroupByKey?.[sig.stableKey];
+          const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
+          const label = group ? group.displayName : frameLabel(leaf);
+          const trend = trendById.get(sig.id) ?? null;
+          const badge = trend ? trendBadge(trend) : null;
           return (
             <tr
               key={sig.id}
-              className={`member-row${sig.id === selectedId ? " selected" : ""}`}
+              className={sig.id === selectedId ? "selected" : ""}
               onClick={() => onSelect(sig.id)}
             >
-              <td className="rank">
-                <input
-                  type="checkbox"
-                  className="compare-box"
-                  checked={checked}
-                  disabled={disabled}
-                  title={
-                    disabled
-                      ? "Two stacks already selected"
-                      : "Select to compare (pick two)"
-                  }
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={() => onToggleCompare(sig.id)}
-                />
-              </td>
+              <td className="rank">{i + 1}</td>
               <td
                 className="num time"
-                title={`${formatPercentOfTotal(sig.duration, profile.totalDuration)} of total hang time`}
+                title={`${formatPercentOfTotal(row.duration, profile.totalDuration)} of total hang time`}
               >
-                {formatSeconds(sig.duration)}
+                {formatSeconds(row.duration)}
               </td>
-              <td className="num count">{formatCount(sig.count)}</td>
+              <td className="num count">{formatCount(row.count)}</td>
               <td className="trend">
                 {badge && (
                   <span className={`trend-badge ${badge.tone}`}>{badge.text}</span>
                 )}
               </td>
-              <td className="sig member-sig">
-                <span className="member-arrow">↳</span>
-                <Highlight text={distinguishingLabel(profile, sig)} needle={filter} />
+              <td className="sig">
+                {sig.knownBug ? (
+                  <BugCell bug={sig.knownBug} />
+                ) : (
+                  <Highlight text={label} needle={filter} />
+                )}
+                {row.mergedCount > 1 && (
+                  <span
+                    className="merge-count"
+                    title={`${row.mergedCount} near-duplicate stacks in this group merged into one row — open the detail pane to see the variants or compare individual stacks`}
+                  >
+                    ×{row.mergedCount}
+                  </span>
+                )}
               </td>
             </tr>
           );
         })}
-    </>
-  );
-}
-
-function SignatureRow({
-  sig,
-  rank,
-  profile,
-  filter,
-  selected,
-  onSelect,
-  trend,
-}: {
-  sig: HangSignature;
-  rank: string;
-  profile: ProcessedProfile;
-  filter: string;
-  selected: boolean;
-  onSelect: (id: string) => void;
-  trend: TrendSummary | null;
-}) {
-  const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
-  const badge = trend ? trendBadge(trend) : null;
-  return (
-    <tr className={selected ? "selected" : ""} onClick={() => onSelect(sig.id)}>
-      <td className="rank">{rank}</td>
-      <td
-        className="num time"
-        title={`${formatPercentOfTotal(sig.duration, profile.totalDuration)} of total hang time`}
-      >
-        {formatSeconds(sig.duration)}
-      </td>
-      <td className="num count">{formatCount(sig.count)}</td>
-      <td className="trend">
-        {badge && <span className={`trend-badge ${badge.tone}`}>{badge.text}</span>}
-      </td>
-      <td className="sig">
-        {sig.knownBug ? (
-          <BugCell bug={sig.knownBug} />
-        ) : (
-          <Highlight text={frameLabel(leaf)} needle={filter} />
+        {remaining > 0 && (
+          <tr className="footer">
+            <td className="rank" />
+            <td className="num time">{formatSeconds(totals.duration)}</td>
+            <td className="num count">{formatCount(totals.count)}</td>
+            <td className="trend" />
+            <td>And {remaining.toLocaleString()} more hangs…</td>
+          </tr>
         )}
-      </td>
-    </tr>
+      </tbody>
+    </table>
   );
 }
 
