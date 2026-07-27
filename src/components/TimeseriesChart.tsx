@@ -31,22 +31,26 @@ import type {
 } from "@/data/timeseries";
 import { computeTrend, trendBadge, type TrendTone } from "@/data/trend";
 import { formatCount, formatDate, formatSeconds } from "@/format";
-import { releaseMarkersForDates, type ReleaseMarker } from "@/data/releases";
+import {
+  PHASE_META,
+  releaseMarkersForDates,
+  type ReleaseColumnMarker,
+} from "@/data/releases";
 import { InfoTip } from "./InfoTip";
 
-const RELEASE_COLOR = "#d76e00"; // matches --orange
-
 /**
- * Draw a dashed vertical line with a "Fx NN" label at each Firefox release date
- * that lands in the visible window, so a spike or a newly appeared hang can be
- * read against the release that may have caused it. Markers are passed through
- * the chart's plugin options as `releaseMarkers.markers`.
+ * Draw a dashed vertical line at each Firefox train milestone that lands in the
+ * visible window, so a spike or a newly appeared hang can be read against the
+ * release (or the Beta / Nightly that preceded it) that may have caused it. Each
+ * day's milestones are stacked as colored "Fx NN Release/Beta/Nightly" labels;
+ * the line is colored by the most prominent milestone (release > beta > nightly).
+ * Markers come through the chart's plugin options as `releaseMarkers.markers`.
  */
 const releaseMarkersPlugin: Plugin<"line"> = {
   id: "releaseMarkers",
   afterDatasetsDraw(chart) {
     const opts = (chart.options.plugins as Record<string, unknown> | undefined)
-      ?.releaseMarkers as { markers?: ReleaseMarker[] } | undefined;
+      ?.releaseMarkers as { markers?: ReleaseColumnMarker[] } | undefined;
     const markers = opts?.markers;
     if (!markers || markers.length === 0) {
       return;
@@ -57,29 +61,33 @@ const releaseMarkersPlugin: Plugin<"line"> = {
     }
     const { ctx, chartArea } = chart;
     ctx.save();
-    ctx.font =
-      "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    ctx.font = "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     ctx.textBaseline = "top";
     const mid = (chartArea.left + chartArea.right) / 2;
     for (const marker of markers) {
       const px = xScale.getPixelForValue(marker.index);
-      if (px == null || Number.isNaN(px)) {
+      if (px == null || Number.isNaN(px) || marker.events.length === 0) {
         continue;
       }
+      // Line colored by the top-ranked milestone on this day (release first).
       ctx.beginPath();
       ctx.setLineDash([4, 3]);
       ctx.lineWidth = 1;
-      ctx.strokeStyle = RELEASE_COLOR;
+      ctx.strokeStyle = PHASE_META[marker.events[0].phase].color;
       ctx.moveTo(px, chartArea.top);
       ctx.lineTo(px, chartArea.bottom);
       ctx.stroke();
 
+      // Stacked, per-phase colored labels; keep them inside the plot area.
       ctx.setLineDash([]);
-      ctx.fillStyle = RELEASE_COLOR;
-      // Keep the label inside the plot area on both edges.
       const alignRight = px > mid;
       ctx.textAlign = alignRight ? "right" : "left";
-      ctx.fillText(marker.label, alignRight ? px - 3 : px + 3, chartArea.top + 1);
+      const labelX = alignRight ? px - 3 : px + 3;
+      marker.events.forEach((event, i) => {
+        const meta = PHASE_META[event.phase];
+        ctx.fillStyle = meta.color;
+        ctx.fillText(`Fx ${event.version} ${meta.label}`, labelX, chartArea.top + 1 + i * 12);
+      });
     }
     ctx.restore();
   },
@@ -317,14 +325,18 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       legend: { display: false },
       tooltip: {
         callbacks: {
-          // Surface the release on the tooltip title when the hovered day is a
-          // release column, so the marker is identifiable without a legend.
+          // Surface the train milestones on the tooltip title when the hovered
+          // day carries one, so the marker is identifiable without a legend.
           title: (items) => {
             const base = items[0]?.label ?? "";
             const marker = markerByIndex.get(items[0]?.dataIndex ?? -1);
-            return marker
-              ? `${base}  ·  ${marker.label} released`
-              : base;
+            if (!marker) {
+              return base;
+            }
+            const parts = marker.events.map(
+              (e) => `Fx ${e.version} ${PHASE_META[e.phase].label}`,
+            );
+            return `${base}  ·  ${parts.join(", ")}`;
           },
           label: (ctx) => {
             const value = ctx.parsed.y ?? 0;
@@ -377,10 +389,12 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             ms/count toggle to switch metric.
             <span className="eg">
               The dot marks the peak day; dashed <em>grey</em> lines are the top
-              contributing stacks for a bug. Vertical <em>orange</em> lines mark
-              Firefox releases (<code>Fx NN</code>), so a spike or a new hang can
-              be lined up against the release that may have caused it. Hover a
-              day to also see the distinct users affected that day.
+              contributing stacks for a bug. Vertical lines mark Firefox train
+              milestones (<code>Fx NN</code>) so a spike or a new hang can be
+              lined up against a release: <em style={{ color: "#d76e00" }}>orange
+              = Release</em>, <em style={{ color: "#0250bb" }}>blue = Beta</em>,{" "}
+              <em style={{ color: "#058b00" }}>green = Nightly</em>. Hover a day
+              to also see the distinct users affected that day.
             </span>
           </InfoTip>
         </h3>
