@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useBugs, useProcessedProfile, useTimeseries } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
 import { filterSignatures } from "@/processing/select";
-import { buildListRows } from "@/processing/grouping";
 import { computeTrend, trendCategory, type TrendSummary } from "@/data/trend";
 import type { Metric } from "@/data/timeseries";
 import { HangTable } from "@/components/HangTable";
@@ -42,21 +41,13 @@ export function Explorer() {
         return t != null && trendCategory(t) === state.trend;
       });
     }
-    return sigs;
-  }, [query.data, state.filter, state.trend, trendById]);
-
-  // Fold each near-duplicate group into one row, then rank the rows by the
-  // summed metric so a merged row sorts by its group total.
-  const rows = useMemo(() => {
-    const merged = buildListRows(filtered, query.data?.leafGroupByKey);
     const rank =
       metric === "count"
-        ? (a: (typeof merged)[number], b: (typeof merged)[number]) =>
-            b.count - a.count
-        : (a: (typeof merged)[number], b: (typeof merged)[number]) =>
+        ? (a: (typeof sigs)[number], b: (typeof sigs)[number]) => b.count - a.count
+        : (a: (typeof sigs)[number], b: (typeof sigs)[number]) =>
             b.duration - a.duration;
-    return merged.sort(rank);
-  }, [filtered, query.data, metric]);
+    return [...sigs].sort(rank);
+  }, [query.data, state.filter, state.trend, trendById, metric]);
 
   const selected = useMemo(() => {
     if (!query.data || !state.selected) {
@@ -129,18 +120,15 @@ export function Explorer() {
             </select>
           </label>
           <span className="summary">
-            <strong>{filtered.length.toLocaleString()}</strong> signatures
-            {rows.length !== filtered.length && (
-              <> ({rows.length.toLocaleString()} after merge)</>
-            )}{" "}
-            · <strong>{formatSeconds(profile.totalDuration)}</strong> s ·{" "}
+            <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
+            <strong>{formatSeconds(profile.totalDuration)}</strong> s ·{" "}
             <strong>{formatCount(profile.totalCount)}</strong> hangs
           </span>
         </div>
         <div className="table-scroll">
           <HangTable
             profile={profile}
-            rows={rows}
+            signatures={filtered}
             filter={state.filter}
             selectedId={state.selected}
             onSelect={(id) => update({ selected: id })}

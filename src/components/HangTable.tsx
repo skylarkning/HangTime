@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import type { ProcessedProfile } from "@/processing/types";
-import type { ListRow } from "@/processing/grouping";
+import type { HangSignature, ProcessedProfile } from "@/processing/types";
 import { resolveFrames } from "@/processing/select";
 import { trendBadge, type TrendSummary } from "@/data/trend";
 import { formatCount, formatPercentOfTotal, formatSeconds } from "@/format";
@@ -12,7 +11,7 @@ const MAX_ROWS = 50;
 
 interface HangTableProps {
   profile: ProcessedProfile;
-  rows: ListRow[];
+  signatures: HangSignature[];
   filter: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -21,7 +20,7 @@ interface HangTableProps {
 
 export function HangTable({
   profile,
-  rows,
+  signatures,
   filter,
   selectedId,
   onSelect,
@@ -30,15 +29,15 @@ export function HangTable({
   const totals = useMemo(() => {
     let duration = 0;
     let count = 0;
-    for (const row of rows) {
-      duration += row.duration;
-      count += row.count;
+    for (const sig of signatures) {
+      duration += sig.duration;
+      count += sig.count;
     }
     return { duration, count };
-  }, [rows]);
+  }, [signatures]);
 
-  const visible = rows.slice(0, MAX_ROWS);
-  const remaining = rows.length - visible.length;
+  const visible = signatures.slice(0, MAX_ROWS);
+  const remaining = signatures.length - visible.length;
 
   return (
     <table className="hangs">
@@ -78,15 +77,7 @@ export function HangTable({
               </span>
             </InfoTip>
           </th>
-          <th>
-            Hang signature
-            <InfoTip label="Hang signature">
-              The hang's first meaningful frame (system code, lock / allocator
-              primitives, SpiderMonkey glue, and event-loop machinery are looked
-              past). Signatures that are the same hang differing only in that
-              noise are merged into one row, tagged <code>×N</code>.
-            </InfoTip>
-          </th>
+          <th>Hang signature (leaf frame)</th>
         </tr>
       </thead>
       <tbody>
@@ -97,14 +88,8 @@ export function HangTable({
             </td>
           </tr>
         )}
-        {visible.map((row, i) => {
-          const sig = row.rep;
-          // Label by the group's meaningful frame when this hang is grouped, so
-          // the list reads by real subsystem (js::Stringify, ...) instead of the
-          // raw leaf primitive (memcpy / free / SleepConditionVariableSRW).
-          const group = profile.leafGroupByKey?.[sig.stableKey];
+        {visible.map((sig, i) => {
           const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
-          const label = group ? group.displayName : frameLabel(leaf);
           const trend = trendById.get(sig.id) ?? null;
           const badge = trend ? trendBadge(trend) : null;
           return (
@@ -116,11 +101,11 @@ export function HangTable({
               <td className="rank">{i + 1}</td>
               <td
                 className="num time"
-                title={`${formatPercentOfTotal(row.duration, profile.totalDuration)} of total hang time`}
+                title={`${formatPercentOfTotal(sig.duration, profile.totalDuration)} of total hang time`}
               >
-                {formatSeconds(row.duration)}
+                {formatSeconds(sig.duration)}
               </td>
-              <td className="num count">{formatCount(row.count)}</td>
+              <td className="num count">{formatCount(sig.count)}</td>
               <td className="trend">
                 {badge && (
                   <span className={`trend-badge ${badge.tone}`}>{badge.text}</span>
@@ -130,15 +115,7 @@ export function HangTable({
                 {sig.knownBug ? (
                   <BugCell bug={sig.knownBug} />
                 ) : (
-                  <Highlight text={label} needle={filter} />
-                )}
-                {row.mergedCount > 1 && (
-                  <span
-                    className="merge-count"
-                    title={`${row.mergedCount} near-duplicate stacks in this group merged into one row — open the detail pane to see the variants or compare individual stacks`}
-                  >
-                    ×{row.mergedCount}
-                  </span>
+                  <Highlight text={frameLabel(leaf)} needle={filter} />
                 )}
               </td>
             </tr>
@@ -150,7 +127,7 @@ export function HangTable({
             <td className="num time">{formatSeconds(totals.duration)}</td>
             <td className="num count">{formatCount(totals.count)}</td>
             <td className="trend" />
-            <td>And {remaining.toLocaleString()} more hangs…</td>
+            <td>And {remaining.toLocaleString()} more signatures…</td>
           </tr>
         )}
       </tbody>
