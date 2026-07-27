@@ -1,64 +1,140 @@
 /**
  * Firefox release-cycle dates, overlaid on the History timeseries so a newly
- * appeared or spiking hang can be lined up against a Firefox release (a release
- * is a common cause of a regression or a fresh signature showing up).
+ * appeared or spiking hang can be lined up against a Firefox train (a release,
+ * or the day a version reaches Beta or Nightly, is a common cause of a
+ * regression or a fresh signature showing up).
  *
- * Source: https://whattrainisitnow.com/calendar/ (Firefox rapid release, roughly
- * a 4-week cadence, shipped on Tuesdays). This is a static snapshot; refresh it
- * from that calendar as the schedule advances. Dates are "YYYYMMDD" to match the
- * artifact's build-date strings.
+ * Source: https://whattrainisitnow.com/calendar/ (Firefox rapid release, ~4-week
+ * cadence, with the usual longer cycle across the December holidays). This is a
+ * static snapshot; refresh it from that calendar as the schedule advances.
+ * Dates are "YYYYMMDD" to match the artifact's build-date strings.
+ *
+ * Each train exposes the three calendar milestones the site shows: the day it
+ * enters Nightly, the day it enters Beta, and its release (GA) day. On any given
+ * merge day version N ships, N+1 goes to Beta, and N+2 opens on Nightly, so a
+ * single day on the chart can carry all three.
  */
 
-export interface FirefoxRelease {
-  /** Major version number, e.g. "139". */
+export interface FirefoxTrain {
+  /** Major version number, e.g. "150". */
   version: string;
-  /** Release (GA) date as "YYYYMMDD". */
-  date: string;
+  /** Day this version opened on Nightly ("YYYYMMDD"). */
+  nightly: string;
+  /** Day this version entered Beta ("YYYYMMDD"). */
+  beta: string;
+  /** Release (GA) day ("YYYYMMDD"). */
+  release: string;
 }
 
-export const FIREFOX_RELEASES: FirefoxRelease[] = [
-  { version: "135", date: "20260106" },
-  { version: "136", date: "20260203" },
-  { version: "137", date: "20260303" },
-  { version: "138", date: "20260331" },
-  { version: "139", date: "20260428" },
-  { version: "140", date: "20260526" },
-  { version: "141", date: "20260623" },
-  { version: "142", date: "20260721" },
+export const FIREFOX_TRAINS: FirefoxTrain[] = [
+  { version: "135", nightly: "20241126", beta: "20250107", release: "20250204" },
+  { version: "136", nightly: "20250107", beta: "20250204", release: "20250304" },
+  { version: "137", nightly: "20250204", beta: "20250304", release: "20250401" },
+  { version: "138", nightly: "20250304", beta: "20250401", release: "20250429" },
+  { version: "139", nightly: "20250401", beta: "20250429", release: "20250527" },
+  { version: "140", nightly: "20250429", beta: "20250527", release: "20250624" },
+  { version: "141", nightly: "20250527", beta: "20250624", release: "20250722" },
+  { version: "142", nightly: "20250624", beta: "20250722", release: "20250819" },
+  { version: "143", nightly: "20250722", beta: "20250819", release: "20250916" },
+  { version: "144", nightly: "20250819", beta: "20250916", release: "20251014" },
+  { version: "145", nightly: "20250916", beta: "20251014", release: "20251111" },
+  { version: "146", nightly: "20251014", beta: "20251111", release: "20251209" },
+  { version: "147", nightly: "20251111", beta: "20251209", release: "20260113" },
+  { version: "148", nightly: "20251209", beta: "20260113", release: "20260224" },
+  { version: "149", nightly: "20260113", beta: "20260225", release: "20260324" },
+  { version: "150", nightly: "20260224", beta: "20260325", release: "20260421" },
+  { version: "151", nightly: "20260324", beta: "20260422", release: "20260519" },
+  { version: "152", nightly: "20260421", beta: "20260520", release: "20260616" },
+  { version: "153", nightly: "20260519", beta: "20260617", release: "20260721" },
 ];
 
-/** A release positioned on the timeseries x-axis. */
-export interface ReleaseMarker {
+export type ReleasePhase = "release" | "beta" | "nightly";
+
+/** Display metadata per phase; `rank` orders stacked labels (release first). */
+export const PHASE_META: Record<
+  ReleasePhase,
+  { label: string; color: string; rank: number }
+> = {
+  release: { label: "Release", color: "#d76e00", rank: 0 }, // --orange
+  beta: { label: "Beta", color: "#0250bb", rank: 1 }, // --blue
+  nightly: { label: "Nightly", color: "#058b00", rank: 2 }, // --green
+};
+
+/** One train milestone falling on a given chart column. */
+export interface ReleaseEvent {
+  version: string;
+  phase: ReleasePhase;
+}
+
+/** All milestones landing on a single sample-date column. */
+export interface ReleaseColumnMarker {
   /** Index into the chart's category axis (the sample-date columns). */
   index: number;
-  /** Short label, e.g. "Fx 139". */
-  label: string;
-  /** The release date as "YYYYMMDD", for the tooltip / title. */
+  /** The sample date this column represents ("YYYYMMDD"). */
   date: string;
+  /** Milestones on this day, release first, then beta, then nightly. */
+  events: ReleaseEvent[];
 }
 
 /**
- * Place the releases that fall inside a window of sorted "YYYYMMDD" sample dates
- * onto that axis. A release landing between two sample days snaps to the first
- * sample on or after it, so the marker sits on a real column. Releases outside
- * the window are dropped.
+ * Place the train milestones (Nightly / Beta / Release) that fall inside a
+ * window of sorted "YYYYMMDD" sample dates onto that axis, grouped by column so
+ * a day carrying several milestones is drawn once with stacked labels. A
+ * milestone landing between two sample days snaps to the first sample on or
+ * after it. Milestones outside the window are dropped.
  */
-export function releaseMarkersForDates(dates: string[]): ReleaseMarker[] {
+export function releaseMarkersForDates(dates: string[]): ReleaseColumnMarker[] {
   if (dates.length === 0) {
     return [];
   }
   const first = dates[0];
   const last = dates[dates.length - 1];
-  const markers: ReleaseMarker[] = [];
-  for (const release of FIREFOX_RELEASES) {
-    if (release.date < first || release.date > last) {
-      continue;
+  const snap = (date: string): number | null => {
+    if (date < first || date > last) {
+      return null;
     }
-    let index = dates.findIndex((d) => d >= release.date);
-    if (index < 0) {
-      index = dates.length - 1;
+    const i = dates.findIndex((d) => d >= date);
+    return i < 0 ? dates.length - 1 : i;
+  };
+
+  const byIndex = new Map<number, ReleaseColumnMarker>();
+  const add = (version: string, phase: ReleasePhase, date: string) => {
+    const index = snap(date);
+    if (index == null) {
+      return;
     }
-    markers.push({ index, label: `Fx ${release.version}`, date: release.date });
+    let marker = byIndex.get(index);
+    if (!marker) {
+      marker = { index, date: dates[index], events: [] };
+      byIndex.set(index, marker);
+    }
+    marker.events.push({ version, phase });
+  };
+
+  for (const train of FIREFOX_TRAINS) {
+    add(train.version, "nightly", train.nightly);
+    add(train.version, "beta", train.beta);
+    add(train.version, "release", train.release);
   }
-  return markers;
+
+  // Rapid release lands a version's Release, the next's Beta, and the one
+  // after's Nightly on the same merge day (the calendar's 1-day offsets are
+  // just Nightly opening vs Beta the following day). Coalesce milestones within
+  // a couple of columns into one marker so the day draws as a single line with
+  // stacked labels rather than overlapping near-adjacent lines.
+  const MERGE_GAP = 2;
+  const sorted = [...byIndex.values()].sort((a, b) => a.index - b.index);
+  const merged: ReleaseColumnMarker[] = [];
+  for (const marker of sorted) {
+    const prev = merged[merged.length - 1];
+    if (prev && marker.index - prev.index <= MERGE_GAP) {
+      prev.events.push(...marker.events);
+    } else {
+      merged.push({ index: marker.index, date: marker.date, events: [...marker.events] });
+    }
+  }
+  for (const marker of merged) {
+    marker.events.sort((a, b) => PHASE_META[a.phase].rank - PHASE_META[b.phase].rank);
+  }
+  return merged;
 }
