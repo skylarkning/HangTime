@@ -19,6 +19,7 @@ import {
   Tooltip,
   type ChartData,
   type ChartOptions,
+  type Plugin,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { HangSignature } from "@/processing/types";
@@ -30,9 +31,68 @@ import type {
 } from "@/data/timeseries";
 import { computeTrend, trendBadge, type TrendTone } from "@/data/trend";
 import { formatCount, formatDate, formatSeconds } from "@/format";
+import { releaseMarkersForDates, type ReleaseMarker } from "@/data/releases";
 import { InfoTip } from "./InfoTip";
 
-Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip);
+const RELEASE_COLOR = "#d76e00"; // matches --orange
+
+/**
+ * Draw a dashed vertical line with a "Fx NN" label at each Firefox release date
+ * that lands in the visible window, so a spike or a newly appeared hang can be
+ * read against the release that may have caused it. Markers are passed through
+ * the chart's plugin options as `releaseMarkers.markers`.
+ */
+const releaseMarkersPlugin: Plugin<"line"> = {
+  id: "releaseMarkers",
+  afterDatasetsDraw(chart) {
+    const opts = (chart.options.plugins as Record<string, unknown> | undefined)
+      ?.releaseMarkers as { markers?: ReleaseMarker[] } | undefined;
+    const markers = opts?.markers;
+    if (!markers || markers.length === 0) {
+      return;
+    }
+    const xScale = chart.scales.x;
+    if (!xScale) {
+      return;
+    }
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    ctx.font =
+      "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    ctx.textBaseline = "top";
+    const mid = (chartArea.left + chartArea.right) / 2;
+    for (const marker of markers) {
+      const px = xScale.getPixelForValue(marker.index);
+      if (px == null || Number.isNaN(px)) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = RELEASE_COLOR;
+      ctx.moveTo(px, chartArea.top);
+      ctx.lineTo(px, chartArea.bottom);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = RELEASE_COLOR;
+      // Keep the label inside the plot area on both edges.
+      const alignRight = px > mid;
+      ctx.textAlign = alignRight ? "right" : "left";
+      ctx.fillText(marker.label, alignRight ? px - 3 : px + 3, chartArea.top + 1);
+    }
+    ctx.restore();
+  },
+};
+
+Chart.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  releaseMarkersPlugin,
+);
 
 // Distinct, color-blind-friendly line colors for the individual member stacks.
 const MEMBER_COLORS = [
@@ -244,6 +304,11 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     datasets,
   };
 
+  // Firefox releases that fall inside the visible window, drawn as dashed
+  // vertical markers by releaseMarkersPlugin.
+  const releaseMarkers = releaseMarkersForDates(series.dates);
+  const markerByIndex = new Map(releaseMarkers.map((m) => [m.index, m]));
+
   const options: ChartOptions<"line"> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -252,6 +317,15 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       legend: { display: false },
       tooltip: {
         callbacks: {
+          // Surface the release on the tooltip title when the hovered day is a
+          // release column, so the marker is identifiable without a legend.
+          title: (items) => {
+            const base = items[0]?.label ?? "";
+            const marker = markerByIndex.get(items[0]?.dataIndex ?? -1);
+            return marker
+              ? `${base}  ·  ${marker.label} released`
+              : base;
+          },
           label: (ctx) => {
             const value = ctx.parsed.y ?? 0;
             const unit = metric === "ms" ? "ms" : "hangs";
@@ -271,6 +345,10 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       },
     },
   };
+  // Custom plugin options (not part of Chart.js's typed plugin map).
+  (options.plugins as Record<string, unknown>).releaseMarkers = {
+    markers: releaseMarkers,
+  };
 
   return (
     <div className="detail-section">
@@ -282,8 +360,10 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             you can see if it’s rising, spiking, or newly appeared. Use the
             ms/count toggle to switch metric.
             <span className="eg">
-              The dot marks the peak day; dashed lines are the top contributing
-              stacks for a bug.
+              The dot marks the peak day; dashed <em>grey</em> lines are the top
+              contributing stacks for a bug. Vertical <em>orange</em> lines mark
+              Firefox releases (<code>Fx NN</code>), so a spike or a new hang can
+              be lined up against the release that may have caused it.
             </span>
           </InfoTip>
         </h3>
