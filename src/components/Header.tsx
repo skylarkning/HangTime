@@ -1,12 +1,19 @@
+import { Link, useLocation } from "react-router-dom";
 import { formatDate } from "@/format";
 import bhrLogo from "@/assets/bhr-logo.png";
 
-const TABS = [
-  { id: "top-hangs", label: "Top Hangs", enabled: true },
-  { id: "overview", label: "Overview", enabled: false },
-  { id: "detail", label: "Hang Detail", enabled: false },
-  { id: "per-site", label: "Per-Site", enabled: false },
-  { id: "alerts", label: "Alerts", enabled: false },
+interface Tab {
+  id: string;
+  label: string;
+  /** Route path for an enabled tab; omitted for planned (disabled) tabs. */
+  to?: string;
+}
+
+const TABS: Tab[] = [
+  { id: "overview", label: "Overview", to: "/" },
+  { id: "top-hangs", label: "Top Hangs", to: "/top-hangs" },
+  { id: "per-site", label: "Per-Site" },
+  { id: "alerts", label: "Alerts" },
 ];
 
 interface HeaderProps {
@@ -15,6 +22,8 @@ interface HeaderProps {
 }
 
 export function Header({ date, thread }: HeaderProps) {
+  const location = useLocation();
+
   return (
     <header className="top">
       <div className="brand">
@@ -23,20 +32,27 @@ export function Header({ date, thread }: HeaderProps) {
         <span className="subtitle">Background Hang Reporter</span>
       </div>
       <nav className="tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={tab.enabled ? "active" : ""}
-            disabled={!tab.enabled}
-            title={tab.enabled ? undefined : "Planned"}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map((tab) =>
+          tab.to ? (
+            // Preserve the current query string (thread/date/…) across tabs.
+            <Link
+              key={tab.id}
+              to={{ pathname: tab.to, search: location.search }}
+              className={location.pathname === tab.to ? "active" : ""}
+            >
+              {tab.label}
+            </Link>
+          ) : (
+            <button key={tab.id} disabled title="Planned">
+              {tab.label}
+            </button>
+          ),
+        )}
       </nav>
       <div className="header-right">
         {date && <span className="pill live">Build {formatDate(date)}</span>}
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
+        <span className="version">Dashboard Version: V1.0 Alpha</span>
       </div>
     </header>
   );

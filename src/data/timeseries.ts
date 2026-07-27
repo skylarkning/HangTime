@@ -71,6 +71,24 @@ export class TimeseriesIndex {
   }
 
   /**
+   * System-wide daily totals: hang ms and count summed across every tracked
+   * signature, parallel to `dates`. This is the top-M tracked volume (not the
+   * absolute total), which is what the overview charts for a health trend.
+   */
+  totals(): { ms: number[]; count: number[] } {
+    const n = this.dates.length;
+    const ms = new Array<number>(n).fill(0);
+    const count = new Array<number>(n).fill(0);
+    for (const sig of this.byKey.values()) {
+      for (let i = 0; i < n; i++) {
+        ms[i] += sig.ms[i] ?? 0;
+        count[i] += sig.count[i] ?? 0;
+      }
+    }
+    return { ms, count };
+  }
+
+  /**
    * Resolve the series for a set of member keys. Missing keys (signatures
    * outside the published top-M, or with no history) are skipped; returns null
    * if none of the members are present.
