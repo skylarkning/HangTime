@@ -10,7 +10,18 @@ import type { ThreadKind } from "./dataSource";
 
 const DATA_BASE = (import.meta.env.VITE_DATA_BASE as string | undefined) ?? "data";
 
-/** One signature's daily series; `ms`/`count` run parallel to `dates`. */
+/**
+ * Distinct affected users over each trailing window, keyed by the roll-up's
+ * window labels. Present only when the artifact was built from daily runs that
+ * carried client metrics.
+ */
+export interface WindowCounts {
+  d7: number;
+  d28: number;
+  d365: number;
+}
+
+/** One signature's daily series; `ms`/`count`/`affected` run parallel to `dates`. */
 export interface TimeseriesSignature {
   /** Representative stack as `[funcName, libName]` pairs, leaf -> root. */
   frames: [string, string][];
@@ -18,6 +29,12 @@ export interface TimeseriesSignature {
   totalCount: number;
   ms: number[];
   count: number[];
+  /** Distinct users affected on each day (absent without client metrics). */
+  affected?: number[];
+  /** Distinct users affected over 7/28/365 days (absent without client metrics). */
+  affectedUsers?: WindowCounts;
+  /** affectedUsers / total window users, in [0, 1] (absent without client metrics). */
+  affectedPct?: WindowCounts;
 }
 
 export interface TimeseriesArtifact {
@@ -28,6 +45,37 @@ export interface TimeseriesArtifact {
   /** Ordered build dates ("20260401") forming the shared x-axis. */
   dates: string[];
   signatures: TimeseriesSignature[];
+  /** Distinct users seen in each window, the shared denominator. */
+  totalUsers?: WindowCounts;
+  /** Distinct users seen on each day, parallel to `dates` (daily denominator). */
+  totalAffected?: number[];
+}
+
+/** The trailing windows the roll-up reports, in ascending length. */
+export const AFFECTED_WINDOWS = [
+  { key: "d7" as const, days: 7, label: "7-Day" },
+  { key: "d28" as const, days: 28, label: "28-Day" },
+  { key: "d365" as const, days: 365, label: "365-Day" },
+];
+
+/** A signature's affected-user share resolved for one trailing window. */
+export interface AffectedWindow {
+  key: keyof WindowCounts;
+  label: string;
+  users: number;
+  totalUsers: number;
+  /** users / totalUsers, in [0, 1]. */
+  pct: number;
+}
+
+/** Affected-user shares across all windows for a (possibly merged) signature. */
+export interface ResolvedAffected {
+  windows: AffectedWindow[];
+  /**
+   * True when more than one member contributed. Per-member user sets cannot be
+   * unioned from published counts, so the totals are summed as an upper bound.
+   */
+  approximate: boolean;
 }
 
 /** Which metric a series carries. */
@@ -48,18 +96,28 @@ export interface MemberSeries {
 /** Resolved series for a (possibly bug-merged) signature. */
 export interface ResolvedSeries {
   dates: string[];
-  /** Element-wise sum across all present members. */
-  total: { ms: number[]; count: number[] };
+  /**
+   * Element-wise sum across all present members. `affected` is present only
+   * when the artifact carried client metrics; for a bug-merged signature it is
+   * a per-member sum (an upper bound, since day sketches aren't unioned here).
+   */
+  total: { ms: number[]; count: number[]; affected?: number[] };
+  /** Distinct users across all signatures on each day (daily denominator). */
+  totalAffected?: number[];
   /** Present member series, sorted by descending total ms. */
   members: MemberSeries[];
 }
 
 export class TimeseriesIndex {
   readonly dates: string[];
+  readonly totalUsers: WindowCounts | undefined;
+  readonly totalAffected: number[] | undefined;
   private readonly byKey: Map<string, TimeseriesSignature>;
 
   constructor(artifact: TimeseriesArtifact) {
     this.dates = artifact.dates;
+    this.totalUsers = artifact.totalUsers;
+    this.totalAffected = artifact.totalAffected;
     this.byKey = new Map();
     for (const sig of artifact.signatures) {
       this.byKey.set(canonicalKeyFromFrames(sig.frames), sig);
@@ -89,41 +147,89 @@ export class TimeseriesIndex {
   }
 
   /**
+   * Resolve the affected-user share over each trailing window for a set of
+   * member keys. Returns null when the artifact carries no client metrics or
+   * none of the members are present. For a multi-member (bug-merged) signature
+   * the per-window user counts are summed rather than unioned -- the published
+   * artifact keeps only counts, not the sketches needed to union across
+   * signatures -- so the result is flagged approximate (an upper bound).
+   */
+  resolveAffected(memberKeys: string[]): ResolvedAffected | null {
+    if (!this.totalUsers) {
+      return null;
+    }
+    const present = memberKeys
+      .map((key) => this.byKey.get(key))
+      .filter((sig): sig is TimeseriesSignature => !!sig?.affectedUsers);
+    if (present.length === 0) {
+      return null;
+    }
+
+    const windows = AFFECTED_WINDOWS.map(({ key, label }) => {
+      const users = present.reduce((sum, sig) => sum + sig.affectedUsers![key], 0);
+      const totalUsers = this.totalUsers![key];
+      return {
+        key,
+        label,
+        users,
+        totalUsers,
+        pct: totalUsers > 0 ? Math.min(users / totalUsers, 1) : 0,
+      };
+    });
+    return { windows, approximate: present.length > 1 };
+  }
+
+  /**
    * Resolve the series for a set of member keys. Missing keys (signatures
    * outside the published top-M, or with no history) are skipped; returns null
    * if none of the members are present.
    */
   resolve(memberKeys: string[]): ResolvedSeries | null {
-    const members: MemberSeries[] = [];
+    const present: TimeseriesSignature[] = [];
     for (const key of memberKeys) {
       const sig = this.byKey.get(key);
-      if (!sig) {
-        continue;
+      if (sig) {
+        present.push(sig);
       }
-      members.push({
-        key,
-        label: sig.frames[0]?.[0] ?? "(root)",
-        frames: sig.frames,
-        ms: sig.ms,
-        count: sig.count,
-        totalMs: sig.totalMs,
-        totalCount: sig.totalCount,
-      });
     }
-    if (members.length === 0) {
+    if (present.length === 0) {
       return null;
     }
-    members.sort((a, b) => b.totalMs - a.totalMs);
+    present.sort((a, b) => b.totalMs - a.totalMs);
+
+    const members: MemberSeries[] = present.map((sig) => ({
+      key: canonicalKeyFromFrames(sig.frames),
+      label: sig.frames[0]?.[0] ?? "(root)",
+      frames: sig.frames,
+      ms: sig.ms,
+      count: sig.count,
+      totalMs: sig.totalMs,
+      totalCount: sig.totalCount,
+    }));
 
     const n = this.dates.length;
-    const total = { ms: new Array(n).fill(0), count: new Array(n).fill(0) };
-    for (const member of members) {
+    const total: ResolvedSeries["total"] = {
+      ms: new Array(n).fill(0),
+      count: new Array(n).fill(0),
+    };
+    const hasAffected = present.some((sig) => sig.affected);
+    const affected = hasAffected ? new Array<number>(n).fill(0) : undefined;
+    for (const sig of present) {
       for (let i = 0; i < n; i++) {
-        total.ms[i] += member.ms[i] ?? 0;
-        total.count[i] += member.count[i] ?? 0;
+        total.ms[i] += sig.ms[i] ?? 0;
+        total.count[i] += sig.count[i] ?? 0;
+        if (affected) {
+          affected[i] += sig.affected?.[i] ?? 0;
+        }
       }
     }
-    return { dates: this.dates, total, members };
+    total.affected = affected;
+    return {
+      dates: this.dates,
+      total,
+      totalAffected: this.totalAffected,
+      members,
+    };
   }
 }
 

@@ -83,7 +83,11 @@ export function DetailPane({
 
       <PlatformSection signature={signature} />
 
-      <AffectedClientsSection profile={profile} signature={signature} />
+      <AffectedClientsSection
+        profile={profile}
+        signature={signature}
+        timeseries={timeseries}
+      />
 
       <AnnotationStatsSection signature={signature} />
 
@@ -512,7 +516,84 @@ function PlatformSection({ signature }: { signature: HangSignature }) {
   );
 }
 
+type AffectedWindowKey = "today" | "d7" | "d28" | "d365";
+
+const AFFECTED_OPTIONS: { key: AffectedWindowKey; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "d7", label: "7-Day" },
+  { key: "d28", label: "28-Day" },
+  { key: "d365", label: "365-Day" },
+];
+
 function AffectedClientsSection({
+  profile,
+  signature,
+  timeseries,
+}: {
+  profile: ProcessedProfile;
+  signature: HangSignature;
+  timeseries: TimeseriesIndex | undefined;
+}) {
+  const [window, setWindow] = useState<AffectedWindowKey>("today");
+  const resolved = timeseries?.resolveAffected(signature.memberKeys) ?? null;
+  const hasCrossDay = !!resolved;
+
+  // A stale window selection (e.g. cross-day unavailable) falls back to Today.
+  const active: AffectedWindowKey = window !== "today" && !hasCrossDay ? "today" : window;
+
+  return (
+    <div className="detail-section">
+      <div className="ts-header">
+        <h3>
+          Affected clients
+          <InfoTip label="Affected clients">
+            Distinct users who hit this hang. <b>Today</b> counts them three ways
+            on the current build for comparison: raw <code>client_id</code>{" "}
+            (exact), a salted hash (exact, privacy-safe), and a HyperLogLog
+            estimate (approximate but mergeable). The <b>7 / 28 / 365-Day</b>{" "}
+            windows merge per-day HyperLogLog sketches across the rolling
+            timeseries, so a user who hangs on many days is counted once; the
+            denominator is all distinct users seen in that same window.
+            {resolved?.approximate && (
+              <span className="eg">
+                This row merges several stacks; their user sets can’t be unioned
+                from the published counts, so cross-day totals are summed as an
+                upper bound.
+              </span>
+            )}
+          </InfoTip>
+          {profile.affectedClientsSynthetic && (
+            <span className="pct"> (synthetic data)</span>
+          )}
+        </h3>
+        <select
+          className="affected-window"
+          value={active}
+          onChange={(e) => setWindow(e.target.value as AffectedWindowKey)}
+          title={hasCrossDay ? undefined : "Cross-day windows need the timeseries artifact"}
+        >
+          {AFFECTED_OPTIONS.map((o) => (
+            <option
+              key={o.key}
+              value={o.key}
+              disabled={o.key !== "today" && !hasCrossDay}
+            >
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {active === "today" ? (
+        <TodayAffected profile={profile} signature={signature} />
+      ) : (
+        <WindowAffected resolved={resolved} windowKey={active} />
+      )}
+    </div>
+  );
+}
+
+/** Three-way distinct-client counts for the current build day. */
+function TodayAffected({
   profile,
   signature,
 }: {
@@ -523,47 +604,62 @@ function AffectedClientsSection({
   const total = profile.affectedClientsTotal;
   const pct = (n: number, d: number) =>
     d > 0
-      ? (n / d).toLocaleString(undefined, {
-          style: "percent",
-          minimumFractionDigits: 1,
-        })
+      ? (n / d).toLocaleString(undefined, { style: "percent", minimumFractionDigits: 1 })
       : "n/a";
   const hllDelta = c.raw > 0 ? (c.hll - c.raw) / c.raw : 0;
   const deltaLabel = `${hllDelta >= 0 ? "+" : ""}${(hllDelta * 100).toFixed(1)}%`;
 
-  const rows: { label: string; n: number; d: number; note: string }[] = [
+  const rows = [
     { label: "Raw client_id", n: c.raw, d: total.raw, note: "exact, ground truth" },
     { label: "Salted hash", n: c.hashed, d: total.hashed, note: "exact, privacy-safe" },
     { label: "HyperLogLog", n: c.hll, d: total.hll, note: `estimate, Δ vs exact ${deltaLabel}` },
   ];
-
   return (
-    <div className="detail-section">
-      <h3>
-        Affected clients (3-way)
-        <InfoTip label="Affected clients">
-          Distinct users hitting this hang, counted three ways for comparison: raw{" "}
-          <code>client_id</code> (exact ground truth), a salted hash of{" "}
-          <code>client_id</code> (exact and privacy-safe), and a HyperLogLog
-          estimate (approximate, cheap, mergeable). Raw and hash should match; the
-          HLL row shows the approximation error. Percentages are of the day’s
-          distinct clients.
-        </InfoTip>
-        {profile.affectedClientsSynthetic && (
-          <span className="pct"> (synthetic data)</span>
-        )}
-      </h3>
-      <ul className="annotation-list">
-        {rows.map((r) => (
-          <li key={r.label}>
-            <code>{r.label}</code>{" "}
-            <span className="pct">
-              {r.n.toLocaleString()} ({pct(r.n, r.d)}) — {r.note}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="annotation-list">
+      {rows.map((r) => (
+        <li key={r.label}>
+          <code>{r.label}</code>{" "}
+          <span className="pct">
+            {r.n.toLocaleString()} ({pct(r.n, r.d)}) — {r.note}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Distinct users affected over one trailing window (HLL-merged). */
+function WindowAffected({
+  resolved,
+  windowKey,
+}: {
+  resolved: ReturnType<TimeseriesIndex["resolveAffected"]>;
+  windowKey: "d7" | "d28" | "d365";
+}) {
+  const win = resolved?.windows.find((w) => w.key === windowKey);
+  if (!win) {
+    return <p className="muted">No cross-day data for this hang.</p>;
+  }
+  const pct = win.pct.toLocaleString(undefined, {
+    style: "percent",
+    minimumFractionDigits: 2,
+  });
+  return (
+    <ul className="annotation-list">
+      <li>
+        <code>Users affected</code>{" "}
+        <span className="pct">
+          {pct} ({win.users.toLocaleString()} of {win.totalUsers.toLocaleString()}{" "}
+          distinct users)
+        </span>
+      </li>
+      <li>
+        <span className="pct">
+          HyperLogLog estimate, merged across the trailing {win.label.replace("-Day", "")}{" "}
+          days{resolved?.approximate ? " · summed across merged stacks (upper bound)" : ""}.
+        </span>
+      </li>
+    </ul>
   );
 }
 
