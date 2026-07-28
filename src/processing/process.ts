@@ -17,7 +17,6 @@
 import type { Profile, Thread } from "@/data/schema";
 import { canonicalKey } from "./signatureKey";
 import type {
-  AffectedClientCounts,
   AnnotationStats,
   HangSignature,
   KnownBug,
@@ -205,7 +204,7 @@ export function buildSignatures(
       memberKeys: [stableKey],
       annotationStats,
       platformStats: platform ? { [platform]: count } : {},
-      affectedClients: { raw: 0, hashed: 0, hll: 0 },
+      affectedClients: 0,
       knownBug: bug,
     };
     signatures.push(sig);
@@ -252,55 +251,44 @@ function hashString(s: string): number {
 }
 
 /**
- * Attach per-signature affected-client counts and compute the daily totals.
+ * Attach the per-signature distinct affected-client count (HyperLogLog) and the
+ * daily total.
  *
  * With a real `--client-metrics` artifact, sum each signature's member stacks
- * (exact per stack; a bug-merged row is an upper bound for raw/hashed and would
- * need sketch-merge for an exact HLL, a follow-up). Without one, synthesize
- * dev-only numbers: raw == hashed (hashing is 1:1), and hll = raw nudged by a
- * deterministic +/- ~2% to mimic HyperLogLog approximation error.
+ * (a bug-merged row is an upper bound, since per-signature sketches aren't
+ * unioned here - a follow-up). Without one, synthesize a dev-only number:
+ * ~count/3 nudged by a deterministic +/- ~2% to mimic HLL approximation error.
  */
 function attachAffectedClients(
   profile: Profile,
   signatures: HangSignature[],
-): { total: AffectedClientCounts; synthetic: boolean } {
+): { total: number; synthetic: boolean } {
   const artifact = profile.affectedClients;
   if (artifact) {
     for (const sig of signatures) {
-      const c: AffectedClientCounts = { raw: 0, hashed: 0, hll: 0 };
+      let hll = 0;
       for (const key of sig.memberKeys) {
-        const m = artifact.bySignature[key];
-        if (m) {
-          c.raw += m.raw;
-          c.hashed += m.hashed;
-          c.hll += m.hll;
-        }
+        hll += artifact.bySignature[key] ?? 0;
       }
-      sig.affectedClients = c;
+      sig.affectedClients = hll;
     }
     return { total: artifact.totalDistinct, synthetic: false };
   }
 
-  let sumRaw = 0;
   let sumHll = 0;
-  let maxRaw = 0;
+  let maxHll = 0;
   for (const sig of signatures) {
-    const raw = Math.max(1, Math.round(sig.count / 3));
+    const base = Math.max(1, Math.round(sig.count / 3));
     const err = ((hashString(sig.stableKey) % 41) - 20) / 1000; // [-0.02, 0.02]
-    const hll = Math.max(1, Math.round(raw * (1 + err)));
-    sig.affectedClients = { raw, hashed: raw, hll };
-    sumRaw += raw;
+    const hll = Math.max(1, Math.round(base * (1 + err)));
+    sig.affectedClients = hll;
     sumHll += hll;
-    maxRaw = Math.max(maxRaw, raw);
+    maxHll = Math.max(maxHll, hll);
   }
   // Model client overlap across signatures, but keep the total >= any single
   // signature so per-signature percentages stay <= 100%.
-  const totalRaw = Math.max(maxRaw, Math.round(sumRaw * 0.6));
-  const totalHll = Math.max(maxRaw, Math.round(sumHll * 0.6));
-  return {
-    total: { raw: totalRaw, hashed: totalRaw, hll: totalHll },
-    synthetic: true,
-  };
+  const total = Math.max(maxHll, Math.round(sumHll * 0.6));
+  return { total, synthetic: true };
 }
 
 /** Accumulate duration and adopt a new representative stack if it's larger. */
