@@ -14,7 +14,6 @@ import { formatCount, formatDate, formatSeconds } from "@/format";
 import { frameLabel, isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
-import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
 
 interface DetailPaneProps {
@@ -244,32 +243,18 @@ function LeafGroupSection({
     return [...byVariant.values()].sort((a, b) => b.duration - a.duration);
   }, [members, signature.stableKey]);
 
-  // The section starts folded to the group name; a compare selection (max two)
-  // drives the side-by-side stack diff. All reset when the selected signature
-  // moves to a different group.
+  // The section starts folded to the group name; both reset when the selected
+  // signature moves to a different group.
   const [open, setOpen] = useState(false);
   const [showIndividual, setShowIndividual] = useState(false);
-  const [compare, setCompare] = useState<string[]>([]);
-  const [showDiff, setShowDiff] = useState(false);
   useEffect(() => {
     setOpen(false);
     setShowIndividual(false);
-    setCompare([]);
-    setShowDiff(false);
   }, [groupKey]);
 
   if (!group) {
     return null;
   }
-
-  const memberByKey = new Map(members.map((m) => [m.key, m]));
-  const toggleCompare = (key: string) =>
-    setCompare((prev) => {
-      if (prev.includes(key)) {
-        return prev.filter((x) => x !== key);
-      }
-      return prev.length >= 2 ? prev : [...prev, key];
-    });
 
   const rawLeafLabel = (m: ResolvedGroupMember): string =>
     frameLabel(resolveFrames(profile, m.frameKeys.slice(0, 1))[0]);
@@ -289,38 +274,16 @@ function LeafGroupSection({
       onSelect(id);
     }
   };
-  const compareRow = (key: string) => {
-    const checked = compare.includes(key);
-    return { checked, disabled: !checked && compare.length >= 2 };
-  };
-  // Compare is keyed by member; each side carries that member's frames so any
-  // two individual stacks can be diffed, even ones folded into the same row.
-  const diffSides = compare
-    .map((k) => memberByKey.get(k))
-    .filter((m): m is ResolvedGroupMember => !!m)
-    .map((m) => ({ frameKeys: m.frameKeys, label: rawLeafLabel(m) }));
-
   // The raw per-member list (for single-variant groups and the "individual
   // stacks" view): labeled by raw leaf so noise differences are visible.
   const rawList = (
     <ul className="group-members">
       {members.map((m) => {
-        const { checked, disabled } = compareRow(m.key);
         return (
           <li
             key={m.key}
             className={`group-member${m.key === signature.stableKey ? " selected" : ""}`}
           >
-            <input
-              type="checkbox"
-              className="compare-box"
-              checked={checked}
-              disabled={disabled}
-              title={
-                disabled ? "Two stacks already selected" : "Select to compare (pick two)"
-              }
-              onChange={() => toggleCompare(m.key)}
-            />
             <button className="group-member-main" onClick={() => selectMember(m)}>
               <span className="member-arrow">↳</span>
               <Highlight text={rawLeafLabel(m)} needle={filter} />
@@ -345,8 +308,7 @@ function LeafGroupSection({
           same Firefox problem collapse together even when the raw leaf (a sleep,
           a <code>memcpy</code>, a <code>free</code>) differs. The whole group is
           one row in the list; open it here to see the distinct variants (each
-          labeled by its branch frame), show every individual stack, or tick two
-          and diff them to confirm the merge is right.
+          labeled by its branch frame) or every individual stack.
         </InfoTip>
       </h3>
       <button
@@ -374,8 +336,7 @@ function LeafGroupSection({
             <>
               <p className="muted group-note">
                 All {members.length.toLocaleString()} stacks are the same hang,
-                differing only in system, allocator, or event-loop frames. Compare
-                any two below to confirm.
+                differing only in system, allocator, or event-loop frames.
               </p>
               {rawList}
             </>
@@ -384,24 +345,11 @@ function LeafGroupSection({
           ) : (
             <ul className="group-members">
               {variants.map((v) => {
-                const { checked, disabled } = compareRow(v.rep.key);
                 return (
                   <li
                     key={v.variantKey}
                     className={`group-member${v.containsSelected ? " selected" : ""}`}
                   >
-                    <input
-                      type="checkbox"
-                      className="compare-box"
-                      checked={checked}
-                      disabled={disabled}
-                      title={
-                        disabled
-                          ? "Two stacks already selected"
-                          : "Select to compare (pick two)"
-                      }
-                      onChange={() => toggleCompare(v.rep.key)}
-                    />
                     <button
                       className="group-member-main"
                       onClick={() => selectMember(v.rep)}
@@ -430,36 +378,7 @@ function LeafGroupSection({
                 : `Show all ${members.length.toLocaleString()} individual stacks`}
             </button>
           )}
-          {members.length >= 2 && (
-            <div className="group-compare">
-              <span>
-                {compare.length === 2
-                  ? "2 stacks selected"
-                  : "Tick two stacks to compare"}
-              </span>
-              <button
-                className="btn"
-                disabled={compare.length !== 2}
-                onClick={() => setShowDiff(true)}
-              >
-                Compare stacks →
-              </button>
-              {compare.length > 0 && (
-                <button className="link" onClick={() => setCompare([])}>
-                  Clear
-                </button>
-              )}
-            </div>
-          )}
         </>
-      )}
-      {showDiff && diffSides.length === 2 && (
-        <StackDiff
-          profile={profile}
-          a={diffSides[0]}
-          b={diffSides[1]}
-          onClose={() => setShowDiff(false)}
-        />
       )}
     </div>
   );
