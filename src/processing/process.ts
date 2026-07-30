@@ -144,9 +144,6 @@ export function buildSignatures(
   // A bug's chosen representative signature, so distinct stacks merge into it.
   const byBug = new Map<number, HangSignature>();
   const signatures: HangSignature[] = [];
-  // Every distinct stack's frames, by canonical key, so a leaf-group member can
-  // be resolved to its stack even when it was folded into another signature.
-  const framesByKey = new Map<string, number[]>();
 
   const sampleCount = thread.sampleTable.length;
   const { sampleHangMs, sampleHangCount } = day;
@@ -170,9 +167,6 @@ export function buildSignatures(
     }
 
     const stableKey = canonicalKey(frameKeys, funcNames, libNames);
-    if (!framesByKey.has(stableKey)) {
-      framesByKey.set(stableKey, frameKeys);
-    }
 
     // Pass 2: bug-merge — fold distinct stacks that match the same bug.
     let bug: KnownBug | undefined;
@@ -255,8 +249,8 @@ export function buildSignatures(
     totalCount,
     affectedClientsTotal: affected.total,
     affectedClientsSynthetic: affected.synthetic,
-    leafGroupByKey: buildLeafGroupLookup(profile, thread.name),
-    groupsByKey: buildResolvedGroups(profile, thread.name, framesByKey),
+    leafGroupByKey: buildLeafGroupLookup(profile, thread.name, funcNames, libNames),
+    groupsByKey: buildResolvedGroups(profile, thread.name, funcNames, libNames),
     sigIdByKey,
   };
 }
@@ -266,11 +260,16 @@ export function buildSignatures(
  * keyed by groupKey. Unlike buildLeafGroupLookup this keeps every member even
  * when several were folded into one displayed signature, so the detail pane can
  * list and diff all of them.
+ *
+ * Members arrive as funcTable indices, so the canonical key is recomputed here
+ * with the same function the sample pass uses. That is what joins a member back
+ * to a displayed signature.
  */
 function buildResolvedGroups(
   profile: Profile,
   threadName: string,
-  framesByKey: Map<string, number[]>,
+  funcNames: string[],
+  libNames: string[],
 ): Record<string, ResolvedGroup> | undefined {
   const groups = profile.leafGroups?.[threadName];
   if (!groups) {
@@ -288,12 +287,13 @@ function buildResolvedGroups(
       avgEventLoopDepth: group.avgEventLoopDepth ?? 0,
       branchFrame: group.branchFrame,
       members: group.members.map((m) => ({
-        key: m.key,
+        key: canonicalKey(m.frameKeys, funcNames, libNames),
         ms: m.ms,
         count: m.count,
         firstUniqueFrame: m.firstUniqueFrame,
-        variantKey: m.variantKey ?? m.key,
-        frameKeys: framesByKey.get(m.key) ?? [],
+        // variant is only unique within a group, so scope it by groupKey.
+        variantKey: `${groupKey}#${m.variant}`,
+        frameKeys: m.frameKeys,
       })),
     };
   }
@@ -308,6 +308,8 @@ function buildResolvedGroups(
 function buildLeafGroupLookup(
   profile: Profile,
   threadName: string,
+  funcNames: string[],
+  libNames: string[],
 ): Record<string, LeafGroupInfo> | undefined {
   const groups = profile.leafGroups?.[threadName];
   if (!groups) {
@@ -317,7 +319,7 @@ function buildLeafGroupLookup(
   for (const group of groups) {
     const groupKey = canonicalKeyFromFrames([group.leafFrame]);
     for (const member of group.members) {
-      byKey[member.key] = {
+      byKey[canonicalKey(member.frameKeys, funcNames, libNames)] = {
         groupKey,
         displayName: group.displayName,
         memberCount: group.memberCount,
@@ -326,7 +328,7 @@ function buildLeafGroupLookup(
         firstUniqueFrame: member.firstUniqueFrame,
         branchFrame: group.branchFrame,
         avgEventLoopDepth: group.avgEventLoopDepth ?? 0,
-        variantKey: member.variantKey ?? member.key,
+        variantKey: `${groupKey}#${member.variant}`,
       };
     }
   }
