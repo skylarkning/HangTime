@@ -119,6 +119,18 @@ function memberLabels(members: MemberSeries[]): string[] {
   });
 }
 
+
+/**
+ * Point sizes for a series that can contain gaps. Days with data are drawn as
+ * part of a line and need no marker, but a day whose neighbours are both
+ * missing has no line segment, so it only appears if it is given one.
+ */
+function isolatedPointRadius(data: (number | null)[]): number[] {
+  return data.map((value, i) =>
+    value != null && data[i - 1] == null && data[i + 1] == null ? 2.5 : 0,
+  );
+}
+
 export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
@@ -144,7 +156,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   }
 
   const showMembers = series.members.length > 1;
-  const pick = (s: { ms: number[]; count: number[] }) =>
+  const pick = (s: { ms: (number | null)[]; count: (number | null)[] }) =>
     metric === "ms" ? s.ms : s.count;
 
   const trend = computeTrend(series, metric);
@@ -169,11 +181,13 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
         `Previous 7d avg: ${fmt(trend.priorAvg)} ${unit}/day`,
     });
   }
-  chips.push({
-    text: `Peak ${formatDate(trend.peakDate)}`,
-    tone: "neutral",
-    title: `${fmt(trend.peakValue)} ${unit}`,
-  });
+  if (trend.peakValue != null) {
+    chips.push({
+      text: `Peak ${formatDate(trend.peakDate)}`,
+      tone: "neutral",
+      title: `${fmt(trend.peakValue)} ${unit}`,
+    });
+  }
   if (showMembers) {
     chips.push({ text: `${trend.trackedStacks} tracked stacks`, tone: "neutral" });
   }
@@ -184,7 +198,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const addLine = (
     label: string,
     title: string,
-    data: number[],
+    data: (number | null)[],
     color: string,
     extra: object,
   ) => {
@@ -193,8 +207,14 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       data,
       borderColor: color,
       backgroundColor: color,
-      pointRadius: 0,
+      // Lines carry no point markers, except where a day has data but both
+      // neighbours are missing: that day has no segment to be drawn as part
+      // of, so without a marker it would vanish entirely.
+      pointRadius: isolatedPointRadius(data),
       tension: 0.2,
+      // A null day is missing data, not zero, so leave a visible gap rather
+      // than drawing a line straight through it.
+      spanGaps: false,
       ...extra,
     });
     legend.push({ label, title, color });
@@ -231,8 +251,9 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
 
   // Mark the peak on the primary line rather than annotating every point.
   if (peakIndex >= 0 && datasets[0]) {
+    const base = isolatedPointRadius(pick(series.total));
     datasets[0].pointRadius = series.dates.map((_, i) =>
-      i === peakIndex ? 4 : 0,
+      i === peakIndex ? 4 : base[i],
     );
     datasets[0].pointBackgroundColor = datasets[0].borderColor as string;
     datasets[0].pointBorderColor = "#fff";
@@ -265,10 +286,13 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
               return "";
             }
             const i = items[0]?.dataIndex ?? 0;
-            const users = affected[i] ?? 0;
+            const users = affected[i];
+            if (users == null) {
+              return "Affected users: no data for this day";
+            }
             const dayTotal = series.totalAffected?.[i];
             const share =
-              dayTotal && dayTotal > 0
+              dayTotal != null && dayTotal > 0
                 ? ` (${((users / dayTotal) * 100).toFixed(2)}% of users)`
                 : "";
             return `Affected users: ${users.toLocaleString()}${share}`;

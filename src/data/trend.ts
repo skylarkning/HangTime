@@ -28,7 +28,8 @@ export interface TrendSummary {
   /** First date of sustained activity, when `isNew`. */
   newSince: string | null;
   peakDate: string;
-  peakValue: number;
+  /** Null when no day in the window has data. */
+  peakValue: number | null;
   /** Number of member stacks behind the series (1 for a plain signature). */
   trackedStacks: number;
 }
@@ -40,8 +41,15 @@ const NEW_BASELINE_MAX_COUNT = 3;
 const REGRESSION_PCT = 0.5;
 const ELEVATED_PCT = 0.2;
 
-const sum = (a: number[]) => a.reduce((s, x) => s + x, 0);
-const mean = (a: number[]) => (a.length ? sum(a) / a.length : 0);
+// Days we have no data for are null, not zero, so they are skipped rather than
+// counted. Averaging over them would drag a signature's recent activity toward
+// zero purely because the roll-up dropped it from a day's top-N.
+const sum = (a: (number | null)[]) =>
+  a.reduce<number>((s, x) => (x == null ? s : s + x), 0);
+const mean = (a: (number | null)[]) => {
+  const known = a.filter((x): x is number => x != null);
+  return known.length ? sum(known) / known.length : 0;
+};
 
 export function computeTrend(
   series: ResolvedSeries,
@@ -53,7 +61,9 @@ export function computeTrend(
 
   let peakIndex = 0;
   for (let i = 1; i < n; i++) {
-    if (primary[i] > primary[peakIndex]) {
+    const value = primary[i];
+    const best = primary[peakIndex];
+    if (value != null && (best == null || value > best)) {
       peakIndex = i;
     }
   }
@@ -80,11 +90,15 @@ export function computeTrend(
   if (isNew) {
     let cumBefore = 0;
     for (let i = 0; i < n; i++) {
-      if (count[i] > 0 && cumBefore < NEW_BASELINE_MAX_COUNT) {
+      const dayCount = count[i];
+      if (dayCount == null) {
+        continue;
+      }
+      if (dayCount > 0 && cumBefore < NEW_BASELINE_MAX_COUNT) {
         newSince = series.dates[i];
         break;
       }
-      cumBefore += count[i];
+      cumBefore += dayCount;
     }
   }
 
