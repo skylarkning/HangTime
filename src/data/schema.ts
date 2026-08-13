@@ -110,18 +110,25 @@ export type FramePair = [string, string];
 
 /** One signature folded into a leaf-frame group. */
 export interface LeafGroupMember {
-  /** Canonical signature key (see signatureKey.ts) of this member. */
-  key: string;
+  /**
+   * This member's stack as funcTable indices, leaf -> root. Resolving these
+   * against the thread's funcTable reproduces the canonical signature key
+   * (see signatureKey.ts), which is how a member joins to a displayed
+   * signature. The artifact ships indices rather than the key itself because
+   * the columnar profile already interns those strings.
+   */
+  frameKeys: FuncIndex[];
   ms: number;
   count: number;
   /** Earliest frame that separates this member from its siblings, or null. */
   firstUniqueFrame: FramePair | null;
   /**
-   * Canonical key of this member's *meaningful* frames. Members sharing a
-   * variantKey are the same hang differing only in skipped noise frames, so
-   * the frontend collapses them into one deduplicated member.
+   * Ordinal distinguishing this member's *meaningful* stack within its group.
+   * Members sharing a variant are the same hang differing only in skipped
+   * noise frames, so the frontend collapses them into one deduplicated member.
+   * Only unique within a group, so callers scope it by groupKey.
    */
-  variantKey: string;
+  variant: number;
 }
 
 /**
