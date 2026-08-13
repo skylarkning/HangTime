@@ -64,6 +64,9 @@ const releaseMarkersPlugin: Plugin<"line"> = {
     ctx.font = "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     ctx.textBaseline = "top";
     const mid = (chartArea.left + chartArea.right) / 2;
+    // Rightmost pixel a label group has claimed, so a dense window (a year of
+    // trains) drops whole groups rather than overprinting them into mush.
+    let lastLabelEnd = -Infinity;
     for (const marker of markers) {
       const px = xScale.getPixelForValue(marker.index);
       if (px == null || Number.isNaN(px) || marker.events.length === 0) {
@@ -83,10 +86,18 @@ const releaseMarkersPlugin: Plugin<"line"> = {
       const alignRight = px > mid;
       ctx.textAlign = alignRight ? "right" : "left";
       const labelX = alignRight ? px - 3 : px + 3;
+      const labels = marker.events.map(
+        (event) => `Fx ${event.version} ${PHASE_META[event.phase].label}`,
+      );
+      const width = Math.max(...labels.map((text) => ctx.measureText(text).width));
+      const startX = alignRight ? labelX - width : labelX;
+      if (startX < lastLabelEnd + 6) {
+        continue;
+      }
+      lastLabelEnd = startX + width;
       marker.events.forEach((event, i) => {
-        const meta = PHASE_META[event.phase];
-        ctx.fillStyle = meta.color;
-        ctx.fillText(`Fx ${event.version} ${meta.label}`, labelX, chartArea.top + 1 + i * 12);
+        ctx.fillStyle = PHASE_META[event.phase].color;
+        ctx.fillText(labels[i], labelX, chartArea.top + 1 + i * 12);
       });
     }
     ctx.restore();
