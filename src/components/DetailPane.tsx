@@ -547,10 +547,8 @@ function AffectedClientsSection({
         <h3>
           Affected clients
           <InfoTip label="Affected clients">
-            Distinct users who hit this hang. <b>Today</b> counts them three ways
-            on the current build for comparison: raw <code>client_id</code>{" "}
-            (exact), a salted hash (exact, privacy-safe), and a HyperLogLog
-            estimate (approximate but mergeable). The <b>7 / 28 / 365-Day</b>{" "}
+            Distinct users who hit this hang, estimated with HyperLogLog.{" "}
+            <b>Today</b> is the current build's count. The <b>7 / 28 / 365-Day</b>{" "}
             windows merge per-day HyperLogLog sketches across the rolling
             timeseries, so a user who hangs on many days is counted once; the
             denominator is all distinct users seen in that same window.
@@ -592,7 +590,7 @@ function AffectedClientsSection({
   );
 }
 
-/** Three-way distinct-client counts for the current build day. */
+/** Distinct affected clients for the current build day (HyperLogLog). */
 function TodayAffected({
   profile,
   signature,
@@ -600,30 +598,27 @@ function TodayAffected({
   profile: ProcessedProfile;
   signature: HangSignature;
 }) {
-  const c = signature.affectedClients;
+  const users = signature.affectedClients;
   const total = profile.affectedClientsTotal;
-  const pct = (n: number, d: number) =>
-    d > 0
-      ? (n / d).toLocaleString(undefined, { style: "percent", minimumFractionDigits: 1 })
+  const pct =
+    total > 0
+      ? (users / total).toLocaleString(undefined, {
+          style: "percent",
+          minimumFractionDigits: 2,
+        })
       : "n/a";
-  const hllDelta = c.raw > 0 ? (c.hll - c.raw) / c.raw : 0;
-  const deltaLabel = `${hllDelta >= 0 ? "+" : ""}${(hllDelta * 100).toFixed(1)}%`;
-
-  const rows = [
-    { label: "Raw client_id", n: c.raw, d: total.raw, note: "exact, ground truth" },
-    { label: "Salted hash", n: c.hashed, d: total.hashed, note: "exact, privacy-safe" },
-    { label: "HyperLogLog", n: c.hll, d: total.hll, note: `estimate, Δ vs exact ${deltaLabel}` },
-  ];
   return (
     <ul className="annotation-list">
-      {rows.map((r) => (
-        <li key={r.label}>
-          <code>{r.label}</code>{" "}
-          <span className="pct">
-            {r.n.toLocaleString()} ({pct(r.n, r.d)}) — {r.note}
-          </span>
-        </li>
-      ))}
+      <li>
+        <code>Users affected</code>{" "}
+        <span className="pct">
+          {pct} ({users.toLocaleString()} of {total.toLocaleString()} distinct
+          users this build)
+        </span>
+      </li>
+      <li>
+        <span className="pct">HyperLogLog estimate.</span>
+      </li>
     </ul>
   );
 }

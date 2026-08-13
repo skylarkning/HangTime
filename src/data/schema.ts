@@ -92,26 +92,17 @@ export interface Thread {
   dates: DateData[];
 }
 
-/** Distinct-client counts computed three ways, for the affected-users metric. */
-export interface AffectedClientCounts {
-  /** Exact distinct count of raw client_id (ground truth; local experiment only). */
-  raw: number;
-  /** Exact distinct count of salted-hashed client_id (privacy-safe; should equal raw). */
-  hashed: number;
-  /** HyperLogLog estimate of distinct clients (approximate; cheap and mergeable). */
-  hll: number;
-}
-
 /**
- * Optional affected-clients block emitted by the experimental
- * `bhr-aggregate --client-metrics` run. Keyed by the canonical signature key
- * (see signatureKey.ts) so the frontend can attach counts to each signature.
- * When absent, the dashboard synthesizes placeholder numbers (dev only).
+ * Optional affected-clients block emitted by a `bhr-aggregate --client-metrics`
+ * run. Each value is a HyperLogLog distinct-client estimate. Keyed by the
+ * canonical signature key (see signatureKey.ts) so the frontend can attach the
+ * count to each signature. When absent, the dashboard synthesizes a placeholder
+ * (dev only).
  */
 export interface AffectedClientsArtifact {
-  /** Day's distinct-client totals per method; the denominator for the % metric. */
-  totalDistinct: AffectedClientCounts;
-  bySignature: Record<string, AffectedClientCounts>;
+  /** Day's distinct-client total (HLL); the denominator for the % metric. */
+  totalDistinct: number;
+  bySignature: Record<string, number>;
 }
 
 /** A `[funcName, libName]` frame pair, leaf -> root order. */

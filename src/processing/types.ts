@@ -1,13 +1,6 @@
 /** Derived types produced by the processing layer (worker) from a Profile. */
 
-import type {
-  AffectedClientCounts,
-  FramePair,
-  FuncIndex,
-  SampleIndex,
-} from "@/data/schema";
-
-export type { AffectedClientCounts };
+import type { FramePair, FuncIndex, SampleIndex } from "@/data/schema";
 
 /** A signature's membership in a near-duplicate leaf-frame group. */
 export interface LeafGroupInfo {
@@ -125,8 +118,8 @@ export interface HangSignature {
   annotationStats: AnnotationStats;
   /** Per-signature OS histogram (platform string -> summed hang count). */
   platformStats: Record<string, number>;
-  /** Distinct affected clients, counted raw / salted-hash / HLL for comparison. */
-  affectedClients: AffectedClientCounts;
+  /** Distinct affected clients on this day (HyperLogLog estimate). */
+  affectedClients: number;
   knownBug?: KnownBug;
 }
 
@@ -145,9 +138,9 @@ export interface ProcessedProfile {
   signatures: HangSignature[];
   totalDuration: number;
   totalCount: number;
-  /** Day's distinct-client totals per method (denominator for the % metric). */
-  affectedClientsTotal: AffectedClientCounts;
-  /** True when the counts are dashboard-synthesized (no --client-metrics data). */
+  /** Day's distinct-client total (HLL); denominator for the % metric. */
+  affectedClientsTotal: number;
+  /** True when the count is dashboard-synthesized (no --client-metrics data). */
   affectedClientsSynthetic: boolean;
   /**
    * Leaf-frame group membership keyed by signature key, for signatures that are

@@ -27,10 +27,16 @@ export interface TimeseriesSignature {
   frames: [string, string][];
   totalMs: number;
   totalCount: number;
-  ms: number[];
-  count: number[];
+  /**
+   * Hang ms on each day. `null` means no data for that day rather than zero:
+   * either the day has no artifact, or the roll-up truncated its per-day top-N
+   * and this signature fell below the cut. A real 0 means the day kept every
+   * signature it saw and this one did not hang.
+   */
+  ms: (number | null)[];
+  count: (number | null)[];
   /** Distinct users affected on each day (absent without client metrics). */
-  affected?: number[];
+  affected?: (number | null)[];
   /** Distinct users affected over 7/28/365 days (absent without client metrics). */
   affectedUsers?: WindowCounts;
   /** affectedUsers / total window users, in [0, 1] (absent without client metrics). */
@@ -48,7 +54,7 @@ export interface TimeseriesArtifact {
   /** Distinct users seen in each window, the shared denominator. */
   totalUsers?: WindowCounts;
   /** Distinct users seen on each day, parallel to `dates` (daily denominator). */
-  totalAffected?: number[];
+  totalAffected?: (number | null)[];
 }
 
 /** The trailing windows the roll-up reports, in ascending length. */
@@ -87,8 +93,8 @@ export interface MemberSeries {
   /** Leaf function name, for the legend. */
   label: string;
   frames: [string, string][];
-  ms: number[];
-  count: number[];
+  ms: (number | null)[];
+  count: (number | null)[];
   totalMs: number;
   totalCount: number;
 }
@@ -101,9 +107,13 @@ export interface ResolvedSeries {
    * when the artifact carried client metrics; for a bug-merged signature it is
    * a per-member sum (an upper bound, since day sketches aren't unioned here).
    */
-  total: { ms: number[]; count: number[]; affected?: number[] };
+  total: {
+    ms: (number | null)[];
+    count: (number | null)[];
+    affected?: (number | null)[];
+  };
   /** Distinct users across all signatures on each day (daily denominator). */
-  totalAffected?: number[];
+  totalAffected?: (number | null)[];
   /** Present member series, sorted by descending total ms. */
   members: MemberSeries[];
 }
@@ -111,7 +121,7 @@ export interface ResolvedSeries {
 export class TimeseriesIndex {
   readonly dates: string[];
   readonly totalUsers: WindowCounts | undefined;
-  readonly totalAffected: number[] | undefined;
+  readonly totalAffected: (number | null)[] | undefined;
   private readonly byKey: Map<string, TimeseriesSignature>;
 
   constructor(artifact: TimeseriesArtifact) {
@@ -208,22 +218,32 @@ export class TimeseriesIndex {
     }));
 
     const n = this.dates.length;
-    const total: ResolvedSeries["total"] = {
-      ms: new Array(n).fill(0),
-      count: new Array(n).fill(0),
-    };
-    const hasAffected = present.some((sig) => sig.affected);
-    const affected = hasAffected ? new Array<number>(n).fill(0) : undefined;
-    for (const sig of present) {
-      for (let i = 0; i < n; i++) {
-        total.ms[i] += sig.ms[i] ?? 0;
-        total.count[i] += sig.count[i] ?? 0;
-        if (affected) {
-          affected[i] += sig.affected?.[i] ?? 0;
+    // Sum only the days we actually have. A day is null in the total when
+    // *every* contributing member is null for it, which for the usual
+    // single-member series just means this signature has no data that day.
+    // When some members have data and others do not, the sum of the known ones
+    // is still the best available answer, so it beats propagating null.
+    const sumDay = (
+      pick: (sig: TimeseriesSignature) => (number | null)[] | undefined,
+    ) =>
+      Array.from({ length: n }, (_, i) => {
+        let acc: number | null = null;
+        for (const sig of present) {
+          const value = pick(sig)?.[i];
+          if (value != null) {
+            acc = (acc ?? 0) + value;
+          }
         }
-      }
-    }
-    total.affected = affected;
+        return acc;
+      });
+
+    const total: ResolvedSeries["total"] = {
+      ms: sumDay((sig) => sig.ms),
+      count: sumDay((sig) => sig.count),
+    };
+    total.affected = present.some((sig) => sig.affected)
+      ? sumDay((sig) => sig.affected)
+      : undefined;
     return {
       dates: this.dates,
       total,
