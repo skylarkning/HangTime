@@ -109,26 +109,30 @@ export interface AffectedClientsArtifact {
 export type FramePair = [string, string];
 
 /** One signature folded into a leaf-frame group. */
-export interface LeafGroupMember {
+export interface LeafGroupMembers {
   /**
-   * This member's stack as funcTable indices, leaf -> root. Resolving these
-   * against the thread's funcTable reproduces the canonical signature key
-   * (see signatureKey.ts), which is how a member joins to a displayed
-   * signature. The artifact ships indices rather than the key itself because
-   * the columnar profile already interns those strings.
+   * Each member's node in the thread's stackTable, leaf -> root via `prefix`.
+   * Walking it yields the funcTable indices that reproduce the canonical
+   * signature key (see signatureKey.ts), which is how a member joins to a
+   * displayed signature. The artifact points at the stackTable rather than
+   * respelling the stack, since the profile already stores it.
    */
-  frameKeys: FuncIndex[];
-  ms: number;
-  count: number;
-  /** Earliest frame that separates this member from its siblings, or null. */
-  firstUniqueFrame: FramePair | null;
+  stack: number[];
+  ms: number[];
+  count: number[];
   /**
-   * Ordinal distinguishing this member's *meaningful* stack within its group.
+   * funcTable index of the earliest frame separating this member from its
+   * siblings, or null. An index rather than a name/lib pair, but it cannot be
+   * derived here: choosing it needs the aggregation job's noise-prefix list.
+   */
+  firstUniqueFunc: (FuncIndex | null)[];
+  /**
+   * Ordinal distinguishing a member's *meaningful* stack within its group.
    * Members sharing a variant are the same hang differing only in skipped
    * noise frames, so the frontend collapses them into one deduplicated member.
    * Only unique within a group, so callers scope it by groupKey.
    */
-  variant: number;
+  variant: number[];
 }
 
 /**
@@ -138,15 +142,13 @@ export interface LeafGroupMember {
  *
  * Grouping is by each stack's first *meaningful* frame (system code, sync /
  * allocator primitives, SpiderMonkey glue, and event-loop machinery are
- * skipped), so `leafFrame`, `commonTrunk`, `branchFrame`, and each member's
- * `firstUniqueFrame` are meaningful frames, not the raw stack leaf.
+ * skipped), so `leafFrame`, `branchFrame`, and each member's
+ * `firstUniqueFunc` are meaningful frames, not the raw stack leaf.
  */
 export interface LeafGroup {
   /** Readable name: the leaf, plus its deepest shared caller when they differ. */
   displayName: string;
   leafFrame: FramePair;
-  /** Frames shared by every member, leaf -> branch point. */
-  commonTrunk: FramePair[];
   /** Deepest frame shared by the whole group (the branch point's context). */
   branchFrame: FramePair;
   memberCount: number;
@@ -154,7 +156,8 @@ export interface LeafGroup {
   totalCount: number;
   /** Mean nested event-loop depth across members (loops trimmed from the leaf). */
   avgEventLoopDepth: number;
-  members: LeafGroupMember[];
+  /** Parallel arrays, one entry per member, sorted by descending ms. */
+  members: LeafGroupMembers;
 }
 
 /** Top-level shape of a `hangs_<thread>_<date>.json` artifact. */

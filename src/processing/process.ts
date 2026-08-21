@@ -14,7 +14,7 @@
  *      Bugzilla whiteboard tag into a single bug row.
  */
 
-import type { Profile, Thread } from "@/data/schema";
+import type { FramePair, FuncIndex, Profile, Thread } from "@/data/schema";
 import { canonicalKey, canonicalKeyFromFrames } from "./signatureKey";
 import type {
   AnnotationStats,
@@ -46,6 +46,18 @@ function reconstructStack(thread: Thread, sampleIndex: number): number[] {
   const { prefix, func } = thread.stackTable;
   const frames: number[] = [];
   let stack: number | null = sampleStack[sampleIndex];
+  while (stack) {
+    frames.push(func[stack]);
+    stack = prefix[stack];
+  }
+  return frames;
+}
+
+/** Walk a stackTable node to its funcTable indices, leaf -> root. */
+function reconstructStackNode(thread: Thread, stackNode: number): number[] {
+  const { prefix, func } = thread.stackTable;
+  const frames: number[] = [];
+  let stack: number | null = stackNode;
   while (stack) {
     frames.push(func[stack]);
     stack = prefix[stack];
@@ -248,8 +260,8 @@ export function buildSignatures(
     totalCount,
     affectedClientsTotal: affected.total,
     affectedClientsSynthetic: affected.synthetic,
-    leafGroupByKey: buildLeafGroupLookup(profile, thread.name, funcNames, libNames),
-    groupsByKey: buildResolvedGroups(profile, thread.name, funcNames, libNames),
+    leafGroupByKey: buildLeafGroupLookup(profile, thread, funcNames, libNames),
+    groupsByKey: buildResolvedGroups(profile, thread, funcNames, libNames),
     sigIdByKey,
   };
 }
@@ -266,14 +278,16 @@ export function buildSignatures(
  */
 function buildResolvedGroups(
   profile: Profile,
-  threadName: string,
+  thread: Thread,
   funcNames: string[],
   libNames: string[],
 ): Record<string, ResolvedGroup> | undefined {
-  const groups = profile.leafGroups?.[threadName];
+  const groups = profile.leafGroups?.[thread.name];
   if (!groups) {
     return undefined;
   }
+  const resolveFunc = (fi: FuncIndex | null): FramePair | null =>
+    fi == null ? null : [funcNames[fi], libNames[fi]];
   const byGroup: Record<string, ResolvedGroup> = {};
   for (const group of groups) {
     const groupKey = canonicalKeyFromFrames([group.leafFrame]);
@@ -285,15 +299,18 @@ function buildResolvedGroups(
       totalCount: group.totalCount,
       avgEventLoopDepth: group.avgEventLoopDepth ?? 0,
       branchFrame: group.branchFrame,
-      members: group.members.map((m) => ({
-        key: canonicalKey(m.frameKeys, funcNames, libNames),
-        ms: m.ms,
-        count: m.count,
-        firstUniqueFrame: m.firstUniqueFrame,
-        // variant is only unique within a group, so scope it by groupKey.
-        variantKey: `${groupKey}#${m.variant}`,
-        frameKeys: m.frameKeys,
-      })),
+      members: group.members.stack.map((stackNode, i) => {
+        const frameKeys = reconstructStackNode(thread, stackNode);
+        return {
+          key: canonicalKey(frameKeys, funcNames, libNames),
+          ms: group.members.ms[i],
+          count: group.members.count[i],
+          firstUniqueFrame: resolveFunc(group.members.firstUniqueFunc[i]),
+          // variant is only unique within a group, so scope it by groupKey.
+          variantKey: `${groupKey}#${group.members.variant[i]}`,
+          frameKeys,
+        };
+      }),
     };
   }
   return byGroup;
@@ -306,30 +323,33 @@ function buildResolvedGroups(
  */
 function buildLeafGroupLookup(
   profile: Profile,
-  threadName: string,
+  thread: Thread,
   funcNames: string[],
   libNames: string[],
 ): Record<string, LeafGroupInfo> | undefined {
-  const groups = profile.leafGroups?.[threadName];
+  const groups = profile.leafGroups?.[thread.name];
   if (!groups) {
     return undefined;
   }
+  const resolveFunc = (fi: FuncIndex | null): FramePair | null =>
+    fi == null ? null : [funcNames[fi], libNames[fi]];
   const byKey: Record<string, LeafGroupInfo> = {};
   for (const group of groups) {
     const groupKey = canonicalKeyFromFrames([group.leafFrame]);
-    for (const member of group.members) {
-      byKey[canonicalKey(member.frameKeys, funcNames, libNames)] = {
+    group.members.stack.forEach((stackNode, i) => {
+      const frameKeys = reconstructStackNode(thread, stackNode);
+      byKey[canonicalKey(frameKeys, funcNames, libNames)] = {
         groupKey,
         displayName: group.displayName,
         memberCount: group.memberCount,
         totalMs: group.totalMs,
         totalCount: group.totalCount,
-        firstUniqueFrame: member.firstUniqueFrame,
+        firstUniqueFrame: resolveFunc(group.members.firstUniqueFunc[i]),
         branchFrame: group.branchFrame,
         avgEventLoopDepth: group.avgEventLoopDepth ?? 0,
-        variantKey: `${groupKey}#${member.variant}`,
+        variantKey: `${groupKey}#${group.members.variant[i]}`,
       };
-    }
+    });
   }
   return byKey;
 }
