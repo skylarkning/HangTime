@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [v1-release-candidate]
+    branches: [main]
   workflow_dispatch:
     inputs:
       data_base:
