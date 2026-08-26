@@ -37,6 +37,7 @@ import {
   type ReleaseColumnMarker,
 } from "@/data/releases";
 import { InfoTip } from "./InfoTip";
+import { memberStacks } from "@/processing/signatureKey";
 
 /**
  * Draw a dashed vertical line at each Firefox train milestone that lands in the
@@ -215,7 +216,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const [showAll, setShowAll] = useState(false);
 
   const series = useMemo<ResolvedSeries | null>(
-    () => (index ? index.resolve(signature.memberKeys) : null),
+    () => (index ? index.resolveByStack(memberStacks(signature)) : null),
     [index, signature],
   );
 

@@ -104,17 +104,26 @@ export interface HangSignature {
   /** Highest single-sample duration seen (drives representative selection). */
   selfDuration: number;
   /**
-   * Stable cross-day key of the representative stack (see signatureKey.ts).
-   * Joins this signature to its timeseries entry.
+   * The representative stack as `frameKeys.join(",")`.
+   *
+   * Everything the worker hands back is keyed by this rather than by the
+   * canonical signature key. The canonical key spells out every frame's name
+   * and library, so at production scale (~158k signatures x ~61 frames) the
+   * key strings alone came to several GB and the structured clone back to the
+   * main thread ran out of memory. funcTable indices say the same thing in a
+   * fraction of the bytes, and both sides already share the funcTable.
+   *
+   * Call `canonicalKeyOf` when the real key is needed -- joining to the
+   * timeseries, which is keyed by frames from another artifact.
    */
-  stableKey: string;
+  stackKey: string;
   /**
-   * Stable keys of every distinct stack merged into this signature. For a
-   * plain signature this is just `[stableKey]`; for a bug-merged signature it
-   * holds one key per contributing stack, so the timeseries view can sum them
-   * into a bug total and break out the top individual stacks.
+   * Stack keys of every distinct stack merged into this signature, present
+   * only when that is more than the signature's own: a bug-merged row folds
+   * several stacks together, and the timeseries view sums them into a bug
+   * total and breaks out the top individual stacks.
    */
-  memberKeys: string[];
+  memberStackKeys?: string[];
   annotationStats: AnnotationStats;
   /** Per-signature OS histogram (platform string -> summed hang count). */
   platformStats: Record<string, number>;

@@ -16,6 +16,7 @@ import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
 import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
+import { memberStacks } from "@/processing/signatureKey";
 
 interface DetailPaneProps {
   profile: ProcessedProfile;
@@ -38,7 +39,7 @@ export function DetailPane({
   const frames = resolveFrames(profile, signature.frameKeys);
 
   let trendNote: string | undefined;
-  const series = timeseries?.resolve(signature.memberKeys);
+  const series = timeseries?.resolveByStack(memberStacks(signature));
   if (series) {
     const badge = trendBadge(computeTrend(series, "ms"));
     trendNote =
@@ -201,7 +202,7 @@ function LeafGroupSection({
   filter: string;
   onSelect: (id: string) => void;
 }) {
-  const info = profile.leafGroupByKey?.[signature.stableKey];
+  const info = profile.leafGroupByKey?.[signature.stackKey];
   const groupKey = info?.groupKey;
   const group = groupKey ? profile.groupsByKey?.[groupKey] : undefined;
 
@@ -241,12 +242,12 @@ function LeafGroupSection({
       if (m.ms > v.rep.ms) {
         v.rep = m;
       }
-      if (m.key === signature.stableKey) {
+      if (m.key === signature.stackKey) {
         v.containsSelected = true;
       }
     }
     return [...byVariant.values()].sort((a, b) => b.duration - a.duration);
-  }, [members, signature.stableKey]);
+  }, [members, signature.stackKey]);
 
   // The section starts folded to the group name; a compare selection (max two)
   // drives the side-by-side stack diff. All reset when the selected signature
@@ -313,7 +314,7 @@ function LeafGroupSection({
         return (
           <li
             key={m.key}
-            className={`group-member${m.key === signature.stableKey ? " selected" : ""}`}
+            className={`group-member${m.key === signature.stackKey ? " selected" : ""}`}
           >
             <input
               type="checkbox"
@@ -535,7 +536,7 @@ function AffectedClientsSection({
   timeseries: TimeseriesIndex | undefined;
 }) {
   const [window, setWindow] = useState<AffectedWindowKey>("today");
-  const resolved = timeseries?.resolveAffected(signature.memberKeys) ?? null;
+  const resolved = timeseries?.resolveAffectedByStack(memberStacks(signature)) ?? null;
   const hasCrossDay = !!resolved;
 
   // A stale window selection (e.g. cross-day unavailable) falls back to Today.

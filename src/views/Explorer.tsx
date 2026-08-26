@@ -8,6 +8,7 @@ import { HangTable } from "@/components/HangTable";
 import { DetailPane } from "@/components/DetailPane";
 import { formatCount, formatSeconds } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
+import { memberStacks } from "@/processing/signatureKey";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -23,8 +24,9 @@ export function Explorer() {
       return map;
     }
     const index = timeseries.data;
+    index?.bind(query.data);
     for (const sig of query.data.signatures) {
-      const series = index?.resolve(sig.memberKeys);
+      const series = index?.resolveByStack(memberStacks(sig));
       map.set(sig.id, series ? computeTrend(series, metric) : null);
     }
     return map;

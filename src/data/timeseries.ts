@@ -5,7 +5,8 @@
  * hang (or a bug merging several stacks) can be joined to its history.
  */
 
-import { canonicalKeyFromFrames } from "@/processing/signatureKey";
+import { canonicalKey, canonicalKeyFromFrames } from "@/processing/signatureKey";
+import type { ProcessedProfile } from "@/processing/types";
 import type { ThreadKind } from "./dataSource";
 
 const DATA_BASE = (import.meta.env.VITE_DATA_BASE as string | undefined) ?? "data";
@@ -123,6 +124,9 @@ export class TimeseriesIndex {
   readonly totalUsers: WindowCounts | undefined;
   readonly totalAffected: (number | null)[] | undefined;
   private readonly byKey: Map<string, TimeseriesSignature>;
+  /** Compact stack key -> canonical key, for signatures this index tracks. */
+  private canonicalByStack = new Map<string, string>();
+  private boundTo: ProcessedProfile | null = null;
 
   constructor(artifact: TimeseriesArtifact) {
     this.dates = artifact.dates;
@@ -136,6 +140,72 @@ export class TimeseriesIndex {
 
   has(key: string): boolean {
     return this.byKey.has(key);
+  }
+
+  /**
+   * Map a processed profile's compact stack keys onto this index.
+   *
+   * The worker keys signatures by funcTable indices rather than canonical keys,
+   * because shipping ~158k canonical keys back exhausts memory. Only a few
+   * hundred signatures are tracked here, so rather than rebuild every key we
+   * take the signatures whose leaf frame appears in this index at all and build
+   * canonical keys for that handful. Idempotent; later calls are no-ops.
+   */
+  bind(profile: ProcessedProfile): void {
+    if (this.boundTo === profile) {
+      return;
+    }
+    const { funcNames, libNames } = profile;
+    const leaves = new Set<string>();
+    for (const sig of this.byKey.values()) {
+      const leaf = sig.frames[0];
+      if (leaf) {
+        leaves.add(`${leaf[0]}\u001f${leaf[1]}`);
+      }
+    }
+    const canonicalByStack = new Map<string, string>();
+    const consider = (stackKey: string) => {
+      if (canonicalByStack.has(stackKey)) {
+        return;
+      }
+      const frameKeys = stackKey.split(",").map(Number);
+      const leaf = frameKeys[0];
+      if (leaf === undefined) {
+        return;
+      }
+      if (!leaves.has(`${funcNames[leaf]}\u001f${libNames[leaf]}`)) {
+        return;
+      }
+      canonicalByStack.set(stackKey, canonicalKey(frameKeys, funcNames, libNames));
+    };
+    for (const sig of profile.signatures) {
+      for (const stackKey of sig.memberStackKeys ?? [sig.stackKey]) {
+        consider(stackKey);
+      }
+    }
+    this.canonicalByStack = canonicalByStack;
+    this.boundTo = profile;
+  }
+
+  private canonicalKeysFor(stackKeys: string[]): string[] {
+    const out: string[] = [];
+    for (const stackKey of stackKeys) {
+      const canonical = this.canonicalByStack.get(stackKey);
+      if (canonical !== undefined) {
+        out.push(canonical);
+      }
+    }
+    return out;
+  }
+
+  /** `resolve`, taking the worker's compact stack keys. Requires `bind`. */
+  resolveByStack(stackKeys: string[]): ResolvedSeries | null {
+    return this.resolve(this.canonicalKeysFor(stackKeys));
+  }
+
+  /** `resolveAffected`, taking the worker's compact stack keys. */
+  resolveAffectedByStack(stackKeys: string[]): ResolvedAffected | null {
+    return this.resolveAffected(this.canonicalKeysFor(stackKeys));
   }
 
   /**

@@ -25,6 +25,7 @@ import type { ThreadKind } from "@/data/dataSource";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import { VolumeChart } from "@/components/VolumeChart";
 import { InfoTip } from "@/components/InfoTip";
+import { memberStacks } from "@/processing/signatureKey";
 
 // Platform identity colors (Okabe-Ito; CVD-validated). Direct-labeled on the
 // bar, so identity never rests on color alone.
@@ -48,8 +49,9 @@ export function Overview() {
     if (!query.data) {
       return map;
     }
+    index?.bind(query.data);
     for (const sig of query.data.signatures) {
-      const series = index?.resolve(sig.memberKeys) ?? null;
+      const series = index?.resolveByStack(memberStacks(sig)) ?? null;
       map.set(sig.id, series ? computeTrend(series, "ms") : null);
     }
     return map;

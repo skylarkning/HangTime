@@ -177,8 +177,6 @@ export function buildSignatures(
       continue;
     }
 
-    const stableKey = canonicalKey(frameKeys, funcNames, libNames);
-
     // Pass 2: bug-merge — fold distinct stacks that match the same bug.
     let bug: KnownBug | undefined;
     if (bugMatcher) {
@@ -198,7 +196,7 @@ export function buildSignatures(
         addAnnotations(bugHang.annotationStats, annotations, count);
         addCount(bugHang.platformStats, platform, count);
         // Distinct stack folded into the bug — record it as a member series.
-        bugHang.memberKeys.push(stableKey);
+        (bugHang.memberStackKeys ??= [bugHang.stackKey]).push(stackKey);
         bySignature.set(stackKey, bugHang);
         continue;
       }
@@ -214,8 +212,7 @@ export function buildSignatures(
       duration,
       count,
       selfDuration: duration,
-      stableKey,
-      memberKeys: [stableKey],
+      stackKey,
       annotationStats,
       platformStats: platform ? { [platform]: count } : {},
       affectedClients: 0,
@@ -237,13 +234,13 @@ export function buildSignatures(
     totalCount += sig.count;
   }
 
-  const affected = attachAffectedClients(profile, signatures);
+  const affected = attachAffectedClients(profile, signatures, funcNames, libNames);
 
-  // Canonical stack key -> the displayed signature it belongs to, so clicking a
-  // group member (which may be a stack folded into a bug row) can select it.
+  // Stack key -> the displayed signature it belongs to, so clicking a group
+  // member (which may be a stack folded into a bug row) can select it.
   const sigIdByKey: Record<string, string> = {};
   for (const sig of signatures) {
-    for (const key of sig.memberKeys) {
+    for (const key of sig.memberStackKeys ?? [sig.stackKey]) {
       sigIdByKey[key] = sig.id;
     }
   }
@@ -302,7 +299,7 @@ function buildResolvedGroups(
       members: group.members.stack.map((stackNode, i) => {
         const frameKeys = reconstructStackNode(thread, stackNode);
         return {
-          key: canonicalKey(frameKeys, funcNames, libNames),
+          key: frameKeys.join(","),
           ms: group.members.ms[i],
           count: group.members.count[i],
           firstUniqueFrame: resolveFunc(group.members.firstUniqueFunc[i]),
@@ -338,7 +335,7 @@ function buildLeafGroupLookup(
     const groupKey = canonicalKeyFromFrames([group.leafFrame]);
     group.members.stack.forEach((stackNode, i) => {
       const frameKeys = reconstructStackNode(thread, stackNode);
-      byKey[canonicalKey(frameKeys, funcNames, libNames)] = {
+      byKey[frameKeys.join(",")] = {
         groupKey,
         displayName: group.displayName,
         memberCount: group.memberCount,
@@ -376,13 +373,19 @@ function hashString(s: string): number {
 function attachAffectedClients(
   profile: Profile,
   signatures: HangSignature[],
+  funcNames: string[],
+  libNames: string[],
 ): { total: number; synthetic: boolean } {
   const artifact = profile.affectedClients;
   if (artifact) {
+    // The aggregation job keys its counts by canonical key, so build those
+    // here. They stay inside the worker, which is the point: it is shipping
+    // them to the main thread that does not scale.
     for (const sig of signatures) {
       let hll = 0;
-      for (const key of sig.memberKeys) {
-        hll += artifact.bySignature[key] ?? 0;
+      for (const key of sig.memberStackKeys ?? [sig.stackKey]) {
+        const frameKeys = key.split(",").map(Number);
+        hll += artifact.bySignature[canonicalKey(frameKeys, funcNames, libNames)] ?? 0;
       }
       sig.affectedClients = hll;
     }
@@ -393,7 +396,7 @@ function attachAffectedClients(
   let maxHll = 0;
   for (const sig of signatures) {
     const base = Math.max(1, Math.round(sig.count / 3));
-    const err = ((hashString(sig.stableKey) % 41) - 20) / 1000; // [-0.02, 0.02]
+    const err = ((hashString(sig.stackKey) % 41) - 20) / 1000; // [-0.02, 0.02]
     const hll = Math.max(1, Math.round(base * (1 + err)));
     sig.affectedClients = hll;
     sumHll += hll;

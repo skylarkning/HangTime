@@ -28,3 +28,14 @@ export function canonicalKey(
 export function canonicalKeyFromFrames(frames: [string, string][]): string {
   return frames.map(([name, lib]) => `${name}${FIELD_SEP}${lib}`).join(FRAME_SEP);
 }
+
+/**
+ * The stack keys a signature covers: its own, or every stack folded into it
+ * when it is a bug-merged row.
+ */
+export function memberStacks(signature: {
+  stackKey: string;
+  memberStackKeys?: string[];
+}): string[] {
+  return signature.memberStackKeys ?? [signature.stackKey];
+}
