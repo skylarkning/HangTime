@@ -79,7 +79,7 @@ npm run typecheck    # tsc only
 npm run verify       # real-browser smoke test (needs `npm run preview` running)
 ```
 
-`npm run verify` drives the system Google Chrome via `puppeteer-core` to load the built
+`npm run verify` via `puppeteer-core` to load the built
 app, wait for the hang table to render, and report any console errors — a quick
 end-to-end check that fetch → worker → React all work.
 
