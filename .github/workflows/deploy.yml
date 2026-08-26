@@ -1,0 +1,52 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_base:
+        description: >-
+          Base URL for artifacts. Defaults to the TaskCluster index route.
+        required: false
+        default: https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.latest.firefox.bhr-aggregate/artifacts/public/bhr
+
+# Pages deploys from the build; one at a time, and don't cancel a running one.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Read artifacts straight from the TaskCluster index rather than shipping
+      # data with the site: the daily artifact is far too large to commit, and
+      # the index route always points at the latest cron run.
+      - run: npm run build
+        env:
+          VITE_DATA_BASE: ${{ inputs.data_base }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

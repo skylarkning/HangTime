@@ -28,7 +28,7 @@ export function Header({ date, thread }: HeaderProps) {
     <header className="top">
       <div className="brand">
         <img className="logo" src={bhrLogo} alt="" aria-hidden="true" />
-        BHR Dashboard
+        Hang Time
         <span className="subtitle">Background Hang Reporter</span>
       </div>
       <nav className="tabs">
