@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
-import { formatDate } from "@/format";
+import { useViewState } from "@/state/useViewState";
 import bhrLogo from "@/assets/bhr-logo.png";
+import { BuildPicker } from "./BuildPicker";
 
 interface Tab {
   id: string;
@@ -23,6 +24,7 @@ interface HeaderProps {
 
 export function Header({ date, thread }: HeaderProps) {
   const location = useLocation();
+  const { state, update } = useViewState();
 
   return (
     <header className="top">
@@ -50,9 +52,14 @@ export function Header({ date, thread }: HeaderProps) {
         )}
       </nav>
       <div className="header-right">
-        {date && <span className="pill live">Build {formatDate(date)}</span>}
+        <BuildPicker
+          date={date}
+          pinned={state.date !== "current"}
+          onSelect={(next) => update({ date: next })}
+          onReset={() => update({ date: "" })}
+        />
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">Dashboard Version: V1.0 Beta</span>
+        <span className="version">Dashboard Version: V1.0.1 Beta</span>
       </div>
     </header>
   );

@@ -13,7 +13,12 @@ export function App() {
 
   return (
     <div className="app">
-      <Header date={query.data?.date} thread={state.thread} />
+      {/* Fall back to the requested build so the picker stays reachable when
+          that build has no artifact -- otherwise the only way out is the URL. */}
+      <Header
+        date={query.data?.date ?? (state.date === "current" ? undefined : state.date)}
+        thread={state.thread}
+      />
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/top-hangs" element={<Explorer />} />

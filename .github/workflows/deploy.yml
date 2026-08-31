@@ -37,6 +37,7 @@ jobs:
       # the index route always points at the latest cron run.
       - run: npm run build
         env:
+          VITE_TC_INDEX: https://firefox-ci-tc.services.mozilla.com/api/index/v1
           VITE_DATA_BASE: ${{ inputs.data_base || 'https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.latest.firefox.bhr-aggregate/artifacts/public/bhr' }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -61,10 +61,27 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
   // Re-process when the bug list first arrives (or refreshes after an error).
   const bugsVersion = bugs.data ? bugs.dataUpdatedAt : 0;
 
-  return useQuery<ProcessedProfile>({
+  const processed = useQuery<ProcessedProfile>({
     queryKey: ["processed", thread, date, bugsVersion],
     enabled: !!raw.data,
     placeholderData: keepPreviousData,
     queryFn: () => getProcessor().process(raw.data!, bugs.data ?? EMPTY_BUGS),
   });
+
+  // A failed fetch leaves the processing query disabled, and a disabled query
+  // reads as pending forever -- so a build with no artifact would sit on the
+  // loading message rather than saying what went wrong. Surface the fetch
+  // error in its place.
+  if (raw.isError) {
+    return {
+      ...processed,
+      data: undefined,
+      isError: true,
+      isSuccess: false,
+      isPending: false,
+      isLoading: false,
+      error: raw.error,
+    } as typeof processed;
+  }
+  return processed;
 }
