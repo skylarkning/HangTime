@@ -18,6 +18,7 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { Metric } from "@/data/timeseries";
+import type { LineChartRef } from "./ChartRange";
 import { formatDate } from "@/format";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
@@ -31,9 +32,11 @@ interface VolumeChartProps {
   dates: string[];
   values: number[];
   metric: Metric;
+  /** Exposes the chart instance so the caller can drag-select a range on it. */
+  chartRef?: LineChartRef;
 }
 
-export function VolumeChart({ dates, values, metric }: VolumeChartProps) {
+export function VolumeChart({ dates, values, metric, chartRef }: VolumeChartProps) {
   let peak = 0;
   for (let i = 1; i < values.length; i++) {
     if (values[i] > values[peak]) {
@@ -74,10 +77,13 @@ export function VolumeChart({ dates, values, metric }: VolumeChartProps) {
       },
     },
     scales: {
-      x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+      x: {
+        ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8 },
+        grid: { display: false },
+      },
       y: { beginAtZero: true, ticks: { maxTicksLimit: 5 } },
     },
   };
 
-  return <Line data={data} options={options} />;
+  return <Line ref={chartRef} data={data} options={options} />;
 }

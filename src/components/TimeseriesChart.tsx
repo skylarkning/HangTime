@@ -36,6 +36,7 @@ import {
   releaseMarkersForDates,
   type ReleaseColumnMarker,
 } from "@/data/releases";
+import { ChartRangeControls, useChartRange, useDragZoom } from "./ChartRange";
 import { InfoTip } from "./InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
 
@@ -214,6 +215,9 @@ function isolatedPointRadius(data: (number | null)[]): number[] {
 export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
+  const [showReleases, setShowReleases] = useState(false);
+  const { range, setRange, reset } = useChartRange(index?.dates.length ?? 0);
+  const { chartRef, dragProps, marquee } = useDragZoom(range, setRange);
 
   const series = useMemo<ResolvedSeries | null>(
     () => (index ? index.resolveByStack(memberStacks(signature)) : null),
@@ -236,11 +240,19 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   }
 
   const showMembers = series.members.length > 1;
+  // Every series is clipped to the visible range; the trend chips stay computed
+  // over the whole window, since zooming is a viewing choice, not a filter.
+  const clip = <T,>(values: T[]) => values.slice(range.start, range.end + 1);
   const pick = (s: { ms: (number | null)[]; count: (number | null)[] }) =>
-    metric === "ms" ? s.ms : s.count;
+    clip(metric === "ms" ? s.ms : s.count);
+  const dates = clip(series.dates);
+  // Tooltips index into the clipped axis, so the per-day user counts they read
+  // have to be clipped to match.
+  const affected = series.total.affected && clip(series.total.affected);
+  const totalAffected = series.totalAffected && clip(series.totalAffected);
 
   const trend = computeTrend(series, metric);
-  const peakIndex = series.dates.indexOf(trend.peakDate);
+  const peakIndex = dates.indexOf(trend.peakDate);
   const unit = metric === "ms" ? "ms" : "hangs";
   const fmt = (v: number) => Math.round(v).toLocaleString();
 
@@ -332,7 +344,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   // Mark the peak on the primary line rather than annotating every point.
   if (peakIndex >= 0 && datasets[0]) {
     const base = isolatedPointRadius(pick(series.total));
-    datasets[0].pointRadius = series.dates.map((_, i) =>
+    datasets[0].pointRadius = dates.map((_, i) =>
       i === peakIndex ? 4 : base[i],
     );
     datasets[0].pointBackgroundColor = datasets[0].borderColor as string;
@@ -341,13 +353,13 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   }
 
   const data: ChartData<"line"> = {
-    labels: series.dates.map(formatDate),
+    labels: dates.map(formatDate),
     datasets,
   };
 
   // Firefox releases that fall inside the visible window, drawn as dashed
   // vertical markers by releaseMarkersPlugin.
-  const releaseMarkers = releaseMarkersForDates(series.dates);
+  const releaseMarkers = showReleases ? releaseMarkersForDates(dates) : [];
   const markerByIndex = new Map(releaseMarkers.map((m) => [m.index, m]));
 
   const options: ChartOptions<"line"> = {
@@ -379,7 +391,6 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
           // Append that single day's distinct affected users (and share of the
           // day's users) when the artifact carried client metrics.
           afterBody: (items) => {
-            const affected = series.total.affected;
             if (!affected) {
               return "";
             }
@@ -388,7 +399,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             if (users == null) {
               return "Affected users: no data for this day";
             }
-            const dayTotal = series.totalAffected?.[i];
+            const dayTotal = totalAffected?.[i];
             const share =
               dayTotal != null && dayTotal > 0
                 ? ` (${((users / dayTotal) * 100).toFixed(2)}% of users)`
@@ -399,7 +410,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       },
     },
     scales: {
-      x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+      x: { ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8 } },
       y: {
         beginAtZero: true,
         title: {
@@ -418,35 +429,56 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     <div className="detail-section">
       <div className="ts-header">
         <h3>
-          History ({series.dates.length} days)
+          History ({dates.length} days)
           <InfoTip label="History">
             Daily hang time (or count) for this signature across the window, so
             you can see if it’s rising, spiking, or newly appeared. Use the
-            ms/count toggle to switch metric.
+            ms/count toggle to switch metric, a preset window to narrow the
+            range, or drag across the chart to zoom into one.
             <span className="eg">
               The dot marks the peak day; dashed <em>grey</em> lines are the top
-              contributing stacks for a bug. Vertical lines mark Firefox train
-              milestones (<code>Fx NN</code>) so a spike or a new hang can be
-              lined up against a release: <em style={{ color: "#d76e00" }}>orange
-              = Release</em>, <em style={{ color: "#0250bb" }}>blue = Beta</em>,{" "}
+              contributing stacks for a bug. Tick <em>Fx releases</em> to mark
+              the Firefox train milestones (<code>Fx NN</code>) as vertical
+              lines, so a spike or a new hang can be lined up against a release:{" "}
+              <em style={{ color: "#d76e00" }}>orange = Release</em>,{" "}
+              <em style={{ color: "#0250bb" }}>blue = Beta</em>,{" "}
               <em style={{ color: "#058b00" }}>green = Nightly</em>. Hover a day
               to also see the distinct users affected that day.
             </span>
           </InfoTip>
         </h3>
-        <div className="ts-toggle">
-          <button
-            className={metric === "ms" ? "active" : ""}
-            onClick={() => setMetric("ms")}
+        <div className="chart-tools">
+          <ChartRangeControls
+            length={series.dates.length}
+            range={range}
+            onChange={setRange}
+            onReset={reset}
+          />
+          <label
+            className="chart-check"
+            title="Mark the Firefox Nightly / Beta / Release milestones"
           >
-            ms
-          </button>
-          <button
-            className={metric === "count" ? "active" : ""}
-            onClick={() => setMetric("count")}
-          >
-            count
-          </button>
+            <input
+              type="checkbox"
+              checked={showReleases}
+              onChange={(e) => setShowReleases(e.target.checked)}
+            />
+            Fx releases
+          </label>
+          <div className="ts-toggle">
+            <button
+              className={metric === "ms" ? "active" : ""}
+              onClick={() => setMetric("ms")}
+            >
+              ms
+            </button>
+            <button
+              className={metric === "count" ? "active" : ""}
+              onClick={() => setMetric("count")}
+            >
+              count
+            </button>
+          </div>
         </div>
       </div>
       <div className="ts-chips">
@@ -456,8 +488,9 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
           </span>
         ))}
       </div>
-      <div className="ts-chart">
-        <Line data={data} options={options} />
+      <div className="ts-chart chart-zoomable" {...dragProps}>
+        <Line ref={chartRef} data={data} options={options} />
+        {marquee}
       </div>
       <div className="ts-legend">
         {legend.map((item) => (

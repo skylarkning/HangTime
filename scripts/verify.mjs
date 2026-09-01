@@ -3,7 +3,7 @@
 // errors + a few extracted rows. Drives the system Chrome via puppeteer-core.
 import puppeteer from "puppeteer-core";
 
-const URL = process.env.VERIFY_URL ?? "http://localhost:4173/";
+const URL = process.env.VERIFY_URL ?? "http://localhost:4173/#/top-hangs";
 const CHROME =
   process.env.CHROME ??
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";

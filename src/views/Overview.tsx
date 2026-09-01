@@ -24,6 +24,7 @@ import type { HangSignature, ProcessedProfile } from "@/processing/types";
 import type { ThreadKind } from "@/data/dataSource";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import { VolumeChart } from "@/components/VolumeChart";
+import { ChartRangeControls, useChartRange, useDragZoom } from "@/components/ChartRange";
 import { InfoTip } from "@/components/InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
 
@@ -199,12 +200,18 @@ function KpiTile({
 
 function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
   const [metric, setMetric] = useState<Metric>("ms");
+  const dates = index?.dates ?? [];
+  const { range, setRange, reset } = useChartRange(dates.length);
+  const { chartRef, dragProps, marquee } = useDragZoom(range, setRange);
+
   if (!index) {
     return null;
   }
   const totals = index.totals();
-  const values = metric === "ms" ? totals.ms : totals.count;
-  const range = `${formatDate(index.dates[0])} – ${formatDate(index.dates[index.dates.length - 1])}`;
+  const all = metric === "ms" ? totals.ms : totals.count;
+  const visibleDates = dates.slice(range.start, range.end + 1);
+  const values = all.slice(range.start, range.end + 1);
+  const span = `${formatDate(visibleDates[0])} – ${formatDate(visibleDates[visibleDates.length - 1])}`;
 
   return (
     <div className="ov-card">
@@ -213,22 +220,41 @@ function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
           Hang volume over time
           <InfoTip label="Hang volume over time">
             Total hang {metric === "ms" ? "time" : "count"} per day summed across
-            the tracked top signatures, over {index.dates.length} days ({range}).
-            The dot marks the peak day. This is tracked volume, not the absolute
-            total, so it reads as a health trend rather than a raw quantity.
+            the tracked top signatures, over {visibleDates.length} days ({span}).
+            The dot marks the peak day in view. This is tracked volume, not the
+            absolute total, so it reads as a health trend rather than a raw
+            quantity.
+            <span className="eg">
+              Pick a preset window, or drag across the chart to zoom into a
+              range.
+            </span>
           </InfoTip>
         </h2>
-        <div className="ts-toggle">
-          <button className={metric === "ms" ? "active" : ""} onClick={() => setMetric("ms")}>
-            ms
-          </button>
-          <button className={metric === "count" ? "active" : ""} onClick={() => setMetric("count")}>
-            count
-          </button>
+        <div className="chart-tools">
+          <ChartRangeControls
+            length={dates.length}
+            range={range}
+            onChange={setRange}
+            onReset={reset}
+          />
+          <div className="ts-toggle">
+            <button className={metric === "ms" ? "active" : ""} onClick={() => setMetric("ms")}>
+              ms
+            </button>
+            <button className={metric === "count" ? "active" : ""} onClick={() => setMetric("count")}>
+              count
+            </button>
+          </div>
         </div>
       </div>
-      <div className="ov-chart">
-        <VolumeChart dates={index.dates} values={values} metric={metric} />
+      <div className="ov-chart chart-zoomable" {...dragProps}>
+        <VolumeChart
+          dates={visibleDates}
+          values={values}
+          metric={metric}
+          chartRef={chartRef}
+        />
+        {marquee}
       </div>
     </div>
   );

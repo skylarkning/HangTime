@@ -140,7 +140,22 @@ table.hangs tr.footer td { color: var(--muted); font-style: italic; background: 
   background: var(--surface); color: var(--muted);
 }
 .ts-toggle button.active { background: var(--blue); color: #fff; }
+.ts-toggle.range button + button { border-left: 1px solid var(--border); }
 .ts-chart { height: 220px; }
+
+/* Chart range controls and drag-to-zoom */
+.chart-tools { display: flex; align-items: center; gap: 10px; }
+.chart-check {
+  display: flex; align-items: center; gap: 4px; font-size: 11px;
+  color: var(--muted); white-space: nowrap; cursor: pointer;
+}
+.chart-check input { margin: 0; cursor: pointer; }
+.chart-zoomable { position: relative; cursor: crosshair; user-select: none; }
+.chart-marquee {
+  position: absolute; pointer-events: none;
+  background: rgba(2, 80, 187, 0.12); border-left: 1px solid var(--blue);
+  border-right: 1px solid var(--blue);
+}
 .affected-window {
   font: inherit; font-size: 11px; padding: 2px 6px; color: var(--text);
   background: var(--surface); border: 1px solid var(--border); border-radius: 4px;

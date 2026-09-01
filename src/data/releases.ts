@@ -6,7 +6,8 @@
  *
  * Source: https://whattrainisitnow.com/calendar/ (Firefox rapid release, ~4-week
  * cadence, with the usual longer cycle across the December holidays). This is a
- * static snapshot; refresh it from that calendar as the schedule advances.
+ * static snapshot taken 2026-09-01; refresh it from that calendar as the
+ * schedule advances (155 onwards moved off the four-week cadence).
  * Dates are "YYYYMMDD" to match the artifact's build-date strings.
  *
  * Each train exposes the three calendar milestones the site shows: the day it
@@ -46,6 +47,11 @@ export const FIREFOX_TRAINS: FirefoxTrain[] = [
   { version: "151", nightly: "20260324", beta: "20260422", release: "20260519" },
   { version: "152", nightly: "20260421", beta: "20260520", release: "20260616" },
   { version: "153", nightly: "20260519", beta: "20260617", release: "20260721" },
+  { version: "154", nightly: "20260616", beta: "20260722", release: "20260818" },
+  { version: "155", nightly: "20260721", beta: "20260817", release: "20260901" },
+  { version: "156", nightly: "20260816", beta: "20260827", release: "20260915" },
+  { version: "157", nightly: "20260827", beta: "20260910", release: "20260929" },
+  { version: "158", nightly: "20260910", beta: "20260924", release: "20261013" },
 ];
 
 export type ReleasePhase = "release" | "beta" | "nightly";
