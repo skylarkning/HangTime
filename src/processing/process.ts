@@ -120,6 +120,33 @@ function addAnnotations(
  * Build a regex matching any known bug signature, plus the lookup from a
  * matched substring back to its bug. Mirrors `bhr.js` fetchBugs.
  */
+/**
+ * Which bug, if any, each funcTable entry's name is tagged with.
+ *
+ * Bug tags match on the function name, and names repeat heavily across stacks:
+ * a production day has ~150k distinct names but ~10M frame visits while
+ * signatures are built. Running the matcher per visit made bug-merging the
+ * single most expensive part of processing (1.7s of a 2.9s pass), so resolve
+ * each name once and let the hot loop do an array lookup.
+ */
+function buildBugByFunc(
+  bugs: BugMap,
+  funcNames: string[],
+): (KnownBug | undefined)[] | null {
+  const matcher = buildBugMatcher(bugs);
+  if (!matcher) {
+    return null;
+  }
+  const byFunc = new Array<KnownBug | undefined>(funcNames.length);
+  for (let i = 0; i < funcNames.length; i++) {
+    const match = funcNames[i].match(matcher);
+    if (match) {
+      byFunc[i] = bugs.get(match[0]);
+    }
+  }
+  return byFunc;
+}
+
 function buildBugMatcher(bugs: BugMap): RegExp | null {
   if (bugs.size === 0) {
     return null;
@@ -150,7 +177,7 @@ export function buildSignatures(
     libIdx == null ? "" : thread.libs[libIdx].name,
   );
 
-  const bugMatcher = buildBugMatcher(bugs);
+  const bugByFunc = buildBugByFunc(bugs, funcNames);
   const bySignature = new Map<string, HangSignature>();
   // A bug's chosen representative signature, so distinct stacks merge into it.
   const byBug = new Map<number, HangSignature>();
@@ -158,14 +185,27 @@ export function buildSignatures(
 
   const sampleCount = thread.sampleTable.length;
   const { sampleHangMs, sampleHangCount } = day;
+  const sampleStack = thread.sampleTable.stack;
+
+  // Reconstructing a stack and joining it into a key is the bulk of this pass,
+  // and samples repeat stacks heavily -- 342k samples over 190k distinct stacks
+  // on a production day, so 44% of that work is redundant. The job interns the
+  // stackTable, so a node id identifies a frame sequence exactly; memoize on it.
+  const framesByNode = new Map<number, { frameKeys: number[]; stackKey: string }>();
 
   for (let i = 0; i < sampleCount; i++) {
-    const frameKeys = reconstructStack(thread, i);
+    const stackNode = sampleStack[i];
+    let resolved = framesByNode.get(stackNode);
+    if (resolved === undefined) {
+      const frames = reconstructStack(thread, i);
+      resolved = { frameKeys: frames, stackKey: frames.join(",") };
+      framesByNode.set(stackNode, resolved);
+    }
+    const { frameKeys, stackKey } = resolved;
     const duration = Math.round(sampleHangMs[i]);
     const count = Math.round(sampleHangCount[i]);
     const annotations = readAnnotations(thread, i);
     const platform = readPlatform(thread, i);
-    const stackKey = frameKeys.join(",");
 
     // Pass 1: dedup identical stacks.
     const existing = bySignature.get(stackKey);
@@ -179,11 +219,11 @@ export function buildSignatures(
 
     // Pass 2: bug-merge — fold distinct stacks that match the same bug.
     let bug: KnownBug | undefined;
-    if (bugMatcher) {
+    if (bugByFunc) {
       for (const fk of frameKeys) {
-        const match = funcNames[fk].match(bugMatcher);
-        if (match) {
-          bug = bugs.get(match[0]);
+        const hit = bugByFunc[fk];
+        if (hit) {
+          bug = hit;
           break;
         }
       }

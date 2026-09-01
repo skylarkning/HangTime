@@ -63,7 +63,11 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
 
   const processed = useQuery<ProcessedProfile>({
     queryKey: ["processed", thread, date, bugsVersion],
-    enabled: !!raw.data,
+    // Wait for the bug list to settle. It is fetched in parallel with the
+    // artifact and resolves sooner, so this costs nothing in practice, and it
+    // avoids processing the whole profile twice -- once unmerged, then again
+    // when the bugs land.
+    enabled: !!raw.data && !bugs.isPending,
     placeholderData: keepPreviousData,
     queryFn: () => getProcessor().process(raw.data!, bugs.data ?? EMPTY_BUGS),
   });
