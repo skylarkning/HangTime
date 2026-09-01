@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { HangSignature, ProcessedProfile } from "@/processing/types";
 import { resolveFrames } from "@/processing/select";
 import { trendBadge, type TrendSummary } from "@/data/trend";
@@ -7,7 +7,8 @@ import { frameLabel } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
 
-const MAX_ROWS = 50;
+/** Rows rendered up front, and how many each "show more" click adds. */
+const PAGE = 50;
 
 interface HangTableProps {
   profile: ProcessedProfile;
@@ -36,7 +37,10 @@ export function HangTable({
     return { duration, count };
   }, [signatures]);
 
-  const visible = signatures.slice(0, MAX_ROWS);
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [signatures]);
+
+  const visible = signatures.slice(0, limit);
   const remaining = signatures.length - visible.length;
 
   return (
@@ -127,7 +131,13 @@ export function HangTable({
             <td className="num time">{formatSeconds(totals.duration)}</td>
             <td className="num count">{formatCount(totals.count)}</td>
             <td className="trend" />
-            <td>And {remaining.toLocaleString()} more signatures…</td>
+            <td>
+              <button className="link more" onClick={() => setLimit((n) => n + PAGE)}>
+                Show {Math.min(PAGE, remaining)} more
+              </button>{" "}
+              · {remaining.toLocaleString()} of{" "}
+              {signatures.length.toLocaleString()} not shown
+            </td>
           </tr>
         )}
       </tbody>

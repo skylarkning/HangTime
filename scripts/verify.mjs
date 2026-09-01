@@ -42,7 +42,44 @@ try {
     return { summary: summaryEl?.textContent ?? null, rows, stateMsg };
   });
 
+  // Row paging: 50 up front, +50 per "show more" click.
+  const dataRows = () =>
+    page.$$eval("table.hangs tbody tr:not(.footer)", (rs) => rs.length);
+  const showMore = async () => {
+    await page.click("table.hangs tr.footer .more");
+    await new Promise((r) => setTimeout(r, 300));
+  };
+  const paging = [await dataRows()];
+  if (paging[0] === 50) {
+    await showMore();
+    paging.push(await dataRows());
+    await showMore();
+    paging.push(await dataRows());
+  }
+  const pagingOk = String(paging) === "50,100,150";
+
+  // The overview's two-column grid has to fit the viewport at any width.
+  const overflow = [];
+  for (const width of [1100, 1280, 1440]) {
+    await page.setViewport({ width, height: 900 });
+    await page.goto(`${URL.split("#")[0]}#/`, { waitUntil: "networkidle2" });
+    await page.waitForSelector(".ov-chart canvas", { timeout: 30000 });
+    await new Promise((r) => setTimeout(r, 400));
+    const fits = await page.evaluate(() => {
+      const ov = document.querySelector(".overview");
+      const cards = [...document.querySelectorAll(".ov-grid > *")];
+      return (
+        ov.scrollWidth <= ov.clientWidth &&
+        cards.every((c) => c.getBoundingClientRect().right <= window.innerWidth)
+      );
+    });
+    overflow.push(`${width}:${fits ? "fits" : "OVERFLOWS"}`);
+  }
+  const layoutOk = overflow.every((o) => o.endsWith("fits"));
+
   console.log("RESULT:", result);
+  console.log("PAGING:", paging.join(" -> "), pagingOk ? "(ok)" : "(FAILED)");
+  console.log("OVERVIEW_FITS:", overflow.join(" "), layoutOk ? "(ok)" : "(FAILED)");
   console.log("SUMMARY:", summary.summary);
   console.log("STATE_MSG:", summary.stateMsg);
   console.log("FIRST_ROWS:", JSON.stringify(summary.rows, null, 2));
@@ -52,7 +89,7 @@ try {
   } else {
     console.log("CONSOLE_ERRORS: none");
   }
-  process.exitCode = result === "rendered" ? 0 : 1;
+  process.exitCode = result === "rendered" && pagingOk && layoutOk ? 0 : 1;
 } finally {
   await browser.close();
 }
