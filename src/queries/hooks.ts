@@ -20,6 +20,7 @@ import {
 } from "@tanstack/react-query";
 import { fetchProfile, type DateSpec, type ThreadKind } from "@/data/dataSource";
 import { fetchBugs, type BugMap } from "@/data/bugs";
+import { fetchComponents, type ProductComponents } from "@/data/components";
 import { fetchTimeseries, type TimeseriesIndex } from "@/data/timeseries";
 import { getProcessor } from "@/processing/client";
 import type { ProcessedProfile } from "@/processing/types";
@@ -33,6 +34,20 @@ export function useBugs(): UseQueryResult<BugMap> {
     queryFn: fetchBugs,
     staleTime: BUGS_STALE_MS,
     retry: 2,
+  });
+}
+
+/**
+ * Bugzilla's product/component list, for the file-a-bug component picker.
+ * Best-effort: without it the picker falls back to the components the
+ * classifier itself knows about.
+ */
+export function useComponents(): UseQueryResult<ProductComponents[]> {
+  return useQuery<ProductComponents[]>({
+    queryKey: ["bz-components"],
+    queryFn: fetchComponents,
+    staleTime: BUGS_STALE_MS,
+    retry: 1,
   });
 }
 

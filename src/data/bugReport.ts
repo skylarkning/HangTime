@@ -11,6 +11,7 @@
  */
 
 import type { Frame } from "@/processing/types";
+import type { BugComponent } from "./componentMap";
 
 const ENTER_BUG_URL = "https://bugzilla.mozilla.org/enter_bug.cgi";
 const MAX_STACK_FRAMES = 20;
@@ -46,8 +47,21 @@ export function buildBugReport(opts: {
   date: string;
   trendNote?: string;
   permalink: string;
+  /** Where to file. Bugzilla only prefills the form when both are set. */
+  target?: BugComponent;
+  /** OS share of the hang, e.g. "Windows 96%", for the comment. */
+  platformNote?: string;
 }): BugReport {
-  const { frames, count, durationMs, date, trendNote, permalink } = opts;
+  const {
+    frames,
+    count,
+    durationMs,
+    date,
+    trendNote,
+    permalink,
+    target,
+    platformNote,
+  } = opts;
   const sig = suggestSignature(frames);
   const whiteboard = `[bhr:${sig}]`;
   const seconds = Math.round(durationMs / 1000).toLocaleString();
@@ -67,6 +81,7 @@ export function buildBugReport(opts: {
     "",
     `Prevalence (build ${date}): ${count.toLocaleString()} hangs, ${seconds}s total`,
     trendNote ? `Trend: ${trendNote}` : null,
+    platformNote ? `Platforms: ${platformNote}` : null,
     "",
     `Add \`${whiteboard}\` to the whiteboard so the dashboard auto-merges matching hangs.`,
     `Dashboard: ${permalink}`,
@@ -79,15 +94,19 @@ export function buildBugReport(opts: {
     .filter((line) => line !== null)
     .join("\n");
 
-  // No product is set on purpose: the reporter picks it on Bugzilla. (Bugzilla
-  // drops these prefilled fields at the product-chooser step, so the "Copy
-  // comment" button is the reliable way to carry the details across.)
+  // Product and component have to be set together for Bugzilla to skip the
+  // product chooser -- that step drops every other prefilled field, which is
+  // why filing used to arrive on an empty form.
   const params = new URLSearchParams({
     bug_type: "defect",
     short_desc: summary,
     status_whiteboard: whiteboard,
     comment,
   });
+  if (target) {
+    params.set("product", target.product);
+    params.set("component", target.component);
+  }
 
   return { summary, whiteboard, comment, url: `${ENTER_BUG_URL}?${params}` };
 }

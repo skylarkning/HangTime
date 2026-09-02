@@ -9,6 +9,13 @@ import type { FramePair } from "@/data/schema";
 import type { TimeseriesIndex } from "@/data/timeseries";
 import { computeTrend, trendBadge } from "@/data/trend";
 import { buildBugReport } from "@/data/bugReport";
+import {
+  classifyStack,
+  dominantPlatform,
+  type BugComponent,
+} from "@/data/componentMap";
+import { isKnownComponent, type ProductComponents } from "@/data/components";
+import { useComponents } from "@/queries/hooks";
 import { resolveFrames } from "@/processing/select";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import { frameLabel, isOwnCode } from "@/frames";
@@ -127,6 +134,23 @@ function FileBugSection({
   trendNote?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [override, setOverride] = useState<BugComponent | null>(null);
+  const componentList = useComponents();
+
+  const platform = dominantPlatform(signature.platformStats);
+  const suggestion = useMemo(
+    () => classifyStack(frames, platform),
+    [frames, platform],
+  );
+
+  // A new selection means a new suggestion; drop any override from the last one.
+  useEffect(() => setOverride(null), [signature.id]);
+
+  const suggested =
+    suggestion && isKnownComponent(componentList.data, suggestion)
+      ? { product: suggestion.product, component: suggestion.component }
+      : null;
+  const target = override ?? suggested;
 
   const report = buildBugReport({
     frames,
@@ -135,6 +159,8 @@ function FileBugSection({
     date: formatDate(date),
     trendNote,
     permalink: window.location.href,
+    target: target ?? undefined,
+    platformNote: platformNote(signature.platformStats),
   });
 
   const copy = async () => {
@@ -160,19 +186,126 @@ function FileBugSection({
 
   return (
     <div className="detail-section">
-      <h3>File a bug</h3>
+      <h3>
+        File a bug
+        <InfoTip label="File a bug">
+          Files straight into the chosen component with the summary, stack,
+          prevalence and whiteboard tag already filled in.
+          <span className="eg">
+            The component is guessed by reading the stack from the leaf outwards
+            for the innermost frame that names an owner, skipping plumbing like
+            binding glue and the IPC transport. On the hangs already tracked by
+            a bug it picks the component those bugs were really filed in about
+            four times in five &mdash; so check it before filing.
+          </span>
+        </InfoTip>
+      </h3>
+      <p className="muted">
+        {suggestion
+          ? "HangTime has suggested the following component for this hang signature, you may also change this if you feel this is wrong."
+          : "HangTime couldn’t tell which component owns this hang — the stack is all shared plumbing. Please pick one."}
+      </p>
+      <ComponentPicker
+        value={target}
+        list={componentList.data}
+        onChange={setOverride}
+      />
+      {suggestion && (
+        <p className="bug-why">
+          <span className={`chip ${CONFIDENCE_TONE[suggestion.confidence]}`}>
+            {suggestion.confidence} confidence
+          </span>
+          matched <code>{suggestion.matched}</code> in frame{" "}
+          {suggestion.frameIndex}, <code>{shortName(suggestion.frameName)}</code>
+        </p>
+      )}
       <p className="muted">
         Files with whiteboard tag <code>{report.whiteboard}</code>, so the
         dashboard auto-merges matching hangs from the next run.
       </p>
       <div className="report-actions">
-        <a className="btn" href={report.url} target="_blank" rel="noreferrer">
-          File Bugzilla bug…
+        <a
+          className={`btn${target ? "" : " disabled"}`}
+          href={target ? report.url : undefined}
+          target="_blank"
+          rel="noreferrer"
+          aria-disabled={!target}
+        >
+          {target ? `File in ${target.component}` : "Pick a component first"}
         </a>
         <button className="btn secondary" onClick={copy}>
           {copied ? "Copied" : "Copy comment"}
         </button>
       </div>
+    </div>
+  );
+}
+
+const CONFIDENCE_TONE = { high: "green", medium: "amber", low: "neutral" };
+
+/** Drop the argument list so a deciding frame reads as a name. */
+function shortName(funcName: string): string {
+  const paren = funcName.indexOf("(");
+  return paren <= 0 ? funcName : funcName.slice(0, paren);
+}
+
+/** "Windows 96%, macOS 3%" for the bug comment. */
+function platformNote(stats: Record<string, number>): string | undefined {
+  const total = Object.values(stats).reduce((a, b) => a + b, 0);
+  if (!total) {
+    return undefined;
+  }
+  return Object.entries(stats)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([os, n]) => `${os} ${Math.round((n / total) * 100)}%`)
+    .join(", ");
+}
+
+/**
+ * Product/component picker. Offers Bugzilla's live list when it loaded, and
+ * otherwise just the suggestion, so a Bugzilla outage can't block filing.
+ */
+function ComponentPicker({
+  value,
+  list,
+  onChange,
+}: {
+  value: BugComponent | null;
+  list: ProductComponents[] | undefined;
+  onChange: (target: BugComponent) => void;
+}) {
+  const key = value ? `${value.product}|${value.component}` : "";
+  return (
+    <div className="component-row">
+      {value && <span className="component-product">{value.product} ::</span>}
+      <select
+        className="component-picker"
+        value={key}
+        onChange={(e) => {
+          const [product, component] = e.target.value.split("|");
+          onChange({ product, component });
+        }}
+      >
+      {!value && <option value="">Choose a component…</option>}
+      {list?.map((entry) => (
+        <optgroup key={entry.product} label={entry.product}>
+          {entry.components.map((component) => (
+            <option
+              key={component}
+              value={`${entry.product}|${component}`}
+            >
+              {component}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+      {!list && value && (
+        <option value={key}>
+          {value.product} :: {value.component}
+        </option>
+      )}
+      </select>
     </div>
   );
 }

@@ -162,6 +162,15 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
   background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
 }
 
+.component-row { display: flex; align-items: center; gap: 6px; margin: 8px 0 6px; }
+.component-product { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.component-picker {
+  font: inherit; font-size: 12px; padding: 4px 6px; min-width: 0; flex: 1;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text);
+}
+.bug-why { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.bug-why code { font-family: var(--mono); font-size: 11px; }
+
 .report-actions { display: flex; gap: 8px; margin-top: 10px; }
 .btn {
   font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px;
@@ -170,6 +179,7 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
 }
 .btn:hover { filter: brightness(1.05); }
 .btn.secondary { background: var(--surface); color: var(--blue); }
+.btn.disabled { background: var(--surface-alt); border-color: var(--border); color: var(--muted-2); cursor: not-allowed; }
 .ts-legend {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
