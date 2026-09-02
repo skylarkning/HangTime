@@ -30,6 +30,13 @@ const PUSHDATE_NS = "gecko.v2.mozilla-central.pushdate";
 const JOB = "firefox.bhr-aggregate";
 
 /**
+ * Namespace a backfill publishes under. A one-off run is indexed by the build
+ * date it aggregated rather than by the push that triggered it, so it is found
+ * exactly instead of guessed at through the run-day offsets below.
+ */
+const BUILD_NS = "gecko.v2.mozilla-central.bhr-aggregate.build";
+
+/**
  * Run days to try for a given build date.
  *
  * The cron aggregates a build four days after the fact, so the run that holds
@@ -65,6 +72,10 @@ function indexedArtifactUrl(runDay: string, file: string): string {
   return `${TC_INDEX}/task/${PUSHDATE_NS}.${runDay}.latest.${JOB}/artifacts/public/bhr/${file}`;
 }
 
+function backfillArtifactUrl(date: string, file: string): string {
+  return `${TC_INDEX}/task/${BUILD_NS}.${date}/artifacts/public/bhr/${file}`;
+}
+
 export async function fetchProfile(
   thread: ThreadKind,
   date: DateSpec,
@@ -80,6 +91,13 @@ export async function fetchProfile(
   }
 
   const file = artifactName(thread, date);
+
+  // A backfilled day is indexed by its build date, so it resolves in one hit.
+  const backfilled = await fetch(backfillArtifactUrl(date, file));
+  if (backfilled.ok) {
+    return (await backfilled.json()) as Profile;
+  }
+
   for (const offset of RUN_DAY_OFFSETS) {
     const runDay = runDayPath(date, offset);
     if (!runDay) {
