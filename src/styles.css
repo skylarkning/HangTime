@@ -284,6 +284,26 @@ table.hangs .trend { width: 4.5em; }
 .state-msg { padding: 40px; text-align: center; color: var(--muted); }
 .state-msg.error { color: var(--red); }
 
+/* Loading screen */
+.load-progress {
+  width: min(440px, calc(100% - 48px)); margin: 56px auto;
+  display: flex; flex-direction: column; gap: 8px; color: var(--muted);
+}
+.load-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.load-step { font-size: 12.5px; }
+.load-bar {
+  height: 8px; border-radius: 4px; overflow: hidden;
+  background: var(--surface-alt); border: 1px solid var(--border);
+}
+.load-fill { height: 100%; width: 0; background: var(--blue); transition: width 0.3s ease-out; }
+.load-bar.indeterminate .load-fill { width: 30%; animation: load-slide 1.2s ease-in-out infinite; }
+@keyframes load-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.load-meta {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.load-note { font-size: 11.5px; color: var(--muted-2); margin-top: 4px; }
+
 /* Near-duplicate group (detail pane) */
 .group-toggle {
   display: flex; align-items: center; gap: 6px; width: 100%;

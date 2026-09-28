@@ -27,6 +27,7 @@ import { VolumeChart } from "@/components/VolumeChart";
 import { ChartRangeControls, useChartRange, useDragZoom } from "@/components/ChartRange";
 import { InfoTip } from "@/components/InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
+import { LoadingProgress } from "@/components/LoadingProgress";
 
 // Platform identity colors (Okabe-Ito; CVD-validated). Direct-labeled on the
 // bar, so identity never rests on color alone.
@@ -66,7 +67,7 @@ export function Overview() {
     );
   }
   if (!query.data) {
-    return <div className="state-msg">Loading and processing hang data…</div>;
+    return <LoadingProgress thread={state.thread} date={state.date} />;
   }
   const profile = query.data;
 

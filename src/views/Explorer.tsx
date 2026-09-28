@@ -9,6 +9,7 @@ import { DetailPane } from "@/components/DetailPane";
 import { formatCount, formatSeconds } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
 import { memberStacks } from "@/processing/signatureKey";
+import { LoadingProgress } from "@/components/LoadingProgress";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -66,7 +67,7 @@ export function Explorer() {
     );
   }
   if (!query.data) {
-    return <div className="state-msg">Loading and processing hang data…</div>;
+    return <LoadingProgress thread={state.thread} date={state.date} />;
   }
   const profile = query.data;
 

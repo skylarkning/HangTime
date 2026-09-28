@@ -22,7 +22,13 @@ import { fetchProfile, type DateSpec, type ThreadKind } from "@/data/dataSource"
 import { fetchBugs, type BugMap } from "@/data/bugs";
 import { fetchComponents, type ProductComponents } from "@/data/components";
 import { fetchTimeseries, type TimeseriesIndex } from "@/data/timeseries";
+import {
+  progressKey,
+  reportProgress,
+} from "@/data/loadProgress";
 import { getProcessor } from "@/processing/client";
+import * as Comlink from "comlink";
+import type { Profile } from "@/data/schema";
 import type { ProcessedProfile } from "@/processing/types";
 
 const EMPTY_BUGS: BugMap = new Map();
@@ -66,11 +72,38 @@ export function useTimeseries(
   });
 }
 
+/** Download, then have the worker process, reporting both to the loading screen. */
+async function loadProfile(thread: ThreadKind, date: DateSpec) {
+  const key = progressKey(thread, date);
+  // A retry starts over, so the progress does too.
+  reportProgress(key, { phase: "download", startedAt: Date.now(), loaded: 0, total: 0 });
+  const profile = await fetchProfile(thread, date, (loaded, total) =>
+    reportProgress(key, { loaded, total }),
+  );
+  reportProgress(key, { phase: "waiting" });
+  return profile;
+}
+
+async function processProfile(
+  thread: ThreadKind,
+  date: DateSpec,
+  profile: Profile,
+  bugs: BugMap,
+): Promise<ProcessedProfile> {
+  const key = progressKey(thread, date);
+  reportProgress(key, { phase: "process", processStartedAt: Date.now(), computed: false });
+  return getProcessor().process(
+    profile,
+    bugs,
+    Comlink.proxy(() => reportProgress(key, { computed: true })),
+  );
+}
+
 export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
   const bugs = useBugs();
   const raw = useQuery({
     queryKey: ["raw-profile", thread, date],
-    queryFn: () => fetchProfile(thread, date),
+    queryFn: () => loadProfile(thread, date),
   });
 
   // Re-process when the bug list first arrives (or refreshes after an error).
@@ -84,7 +117,7 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
     // when the bugs land.
     enabled: !!raw.data && !bugs.isPending,
     placeholderData: keepPreviousData,
-    queryFn: () => getProcessor().process(raw.data!, bugs.data ?? EMPTY_BUGS),
+    queryFn: () => processProfile(thread, date, raw.data!, bugs.data ?? EMPTY_BUGS),
   });
 
   // A failed fetch leaves the processing query disabled, and a disabled query

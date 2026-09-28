@@ -6,6 +6,7 @@
  */
 
 import type { Profile } from "./schema";
+import { learned } from "./loadProgress";
 
 /**
  * Base URL for artifacts. Defaults to the dev server's `public/data`. In
@@ -76,9 +77,52 @@ function backfillArtifactUrl(date: string, file: string): string {
   return `${TC_INDEX}/task/${BUILD_NS}.${date}/artifacts/public/bhr/${file}`;
 }
 
+/** Bytes on the wire so far, and in all (0 when the server doesn't say). */
+export type DownloadProgress = (loaded: number, total: number) => void;
+
+/**
+ * Read a response body as JSON, reporting progress as it streams in.
+ *
+ * Content-Length counts the bytes on the wire, but the stream hands back the
+ * body already decompressed, and the artifact is served gzipped. So when the
+ * response is compressed, progress is the decompressed count scaled down by
+ * the ratio the last load measured. It's an estimate, capped short of the
+ * total so a ratio that's off can't show the bar full while data still flows.
+ */
+async function readJson<T>(res: Response, onProgress?: DownloadProgress): Promise<T> {
+  if (!onProgress || !res.body) {
+    return (await res.json()) as T;
+  }
+  const total = Number(res.headers.get("Content-Length")) || 0;
+  const encoding = res.headers.get("Content-Encoding");
+  const compressed = !!encoding && encoding !== "identity";
+  const ratio = compressed ? learned.compressionRatio() : 1;
+
+  const chunks: BlobPart[] = [];
+  let decoded = 0;
+  const reader = res.body.getReader();
+  onProgress(0, total);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    chunks.push(value);
+    decoded += value.byteLength;
+    const wire = decoded / ratio;
+    onProgress(total ? Math.min(wire, total * 0.99) : wire, total);
+  }
+  onProgress(total || decoded, total);
+  if (compressed && total) {
+    learned.setCompressionRatio(decoded / total);
+  }
+  return (await new Response(new Blob(chunks)).json()) as T;
+}
+
 export async function fetchProfile(
   thread: ThreadKind,
   date: DateSpec,
+  onProgress?: DownloadProgress,
 ): Promise<Profile> {
   // The latest run publishes "current", so that needs no index lookup.
   if (date === "current" || !TC_INDEX) {
@@ -87,7 +131,7 @@ export async function fetchProfile(
     if (!res.ok) {
       throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
     }
-    return (await res.json()) as Profile;
+    return readJson<Profile>(res, onProgress);
   }
 
   const file = artifactName(thread, date);
@@ -95,7 +139,7 @@ export async function fetchProfile(
   // A backfilled day is indexed by its build date, so it resolves in one hit.
   const backfilled = await fetch(backfillArtifactUrl(date, file));
   if (backfilled.ok) {
-    return (await backfilled.json()) as Profile;
+    return readJson<Profile>(backfilled, onProgress);
   }
 
   for (const offset of RUN_DAY_OFFSETS) {
@@ -105,7 +149,7 @@ export async function fetchProfile(
     }
     const res = await fetch(indexedArtifactUrl(runDay, file));
     if (res.ok) {
-      return (await res.json()) as Profile;
+      return readJson<Profile>(res, onProgress);
     }
   }
   throw new Error(
