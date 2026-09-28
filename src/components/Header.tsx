@@ -17,6 +17,8 @@ const TABS: Tab[] = [
   { id: "alerts", label: "Alerts" },
 ];
 
+const FEEDBACK_URL = "https://github.com/skylarkning/HangTime/issues";
+
 interface HeaderProps {
   date?: string;
   thread: string;
@@ -30,7 +32,7 @@ export function Header({ date, thread }: HeaderProps) {
     <header className="top">
       <div className="brand">
         <img className="logo" src={bhrLogo} alt="" aria-hidden="true" />
-        Hang Time
+        HangTime
         <span className="subtitle">Background Hang Reporter</span>
       </div>
       <nav className="tabs">
@@ -52,6 +54,14 @@ export function Header({ date, thread }: HeaderProps) {
         )}
       </nav>
       <div className="header-right">
+        <a
+          className="pill feedback-link"
+          href={FEEDBACK_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Bug &amp; Feedback
+        </a>
         <BuildPicker
           date={date}
           pinned={state.date !== "current"}
@@ -59,7 +69,7 @@ export function Header({ date, thread }: HeaderProps) {
           onReset={() => update({ date: "" })}
         />
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">Dashboard Version: V1.0.4</span>
+        <span className="version">Dashboard Version: V1.0.5</span>
       </div>
     </header>
   );
