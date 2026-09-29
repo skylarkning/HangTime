@@ -77,9 +77,17 @@ async function loadProfile(thread: ThreadKind, date: DateSpec) {
   const key = progressKey(thread, date);
   // A retry starts over, so the progress does too.
   reportProgress(key, { phase: "download", startedAt: Date.now(), loaded: 0, total: 0 });
-  const profile = await fetchProfile(thread, date, (loaded, total) =>
-    reportProgress(key, { loaded, total }),
-  );
+  // The body arrives in hundreds of small chunks; redrawing the loading screen
+  // for each one slows the download it is reporting on. A few times a second
+  // is plenty.
+  let lastReport = 0;
+  const profile = await fetchProfile(thread, date, (loaded, total) => {
+    const now = Date.now();
+    if (now - lastReport >= 150 || (total > 0 && loaded >= total)) {
+      lastReport = now;
+      reportProgress(key, { loaded, total });
+    }
+  });
   reportProgress(key, { phase: "waiting" });
   return profile;
 }
