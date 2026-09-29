@@ -1,0 +1,45 @@
+name: Feedback
+description: Share feedback, request a feature, or ask for data HangTime doesn't show yet.
+title: "[Feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape HangTime. Issues on this repository are public,
+        so anything you enter below, including your name and email, can be seen
+        by anyone.
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      placeholder: Jane Doe
+    validations:
+      required: true
+  - type: input
+    id: email
+    attributes:
+      label: Email
+      description: So we can follow up with you. This will be public.
+      placeholder: jane@example.com
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What are you asking for?
+      options:
+        - Feedback
+        - Feature request
+        - Data request
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: |
+        Tell us what you think, what you'd like HangTime to do, or what data you'd
+        like to see. For a data request, say what you'd use it for.
+    validations:
+      required: true
