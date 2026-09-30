@@ -14,7 +14,6 @@
  */
 
 import {
-  keepPreviousData,
   useQuery,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -76,7 +75,7 @@ export function useTimeseries(
 async function loadProfile(thread: ThreadKind, date: DateSpec) {
   const key = progressKey(thread, date);
   // A retry starts over, so the progress does too.
-  reportProgress(key, { phase: "download", startedAt: Date.now(), loaded: 0, total: 0 });
+  reportProgress(key, { phase: "download", startedAt: Date.now(), loaded: 0 });
   // The body arrives in hundreds of small chunks; redrawing the loading screen
   // for each one slows the download it is reporting on. A few times a second
   // is plenty.
@@ -124,7 +123,13 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
     // avoids processing the whole profile twice -- once unmerged, then again
     // when the bugs land.
     enabled: !!raw.data && !bugs.isPending,
-    placeholderData: keepPreviousData,
+    // Keep showing the current result while a refreshed bug list re-merges it,
+    // but not across a change of build or thread: that would leave the old
+    // build on screen, under the new build's name, with no sign it's loading.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === thread && previousQuery?.queryKey[2] === date
+        ? previous
+        : undefined,
     queryFn: () => processProfile(thread, date, raw.data!, bugs.data ?? EMPTY_BUGS),
   });
 

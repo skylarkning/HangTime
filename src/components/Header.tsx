@@ -70,7 +70,7 @@ export function Header({ date, thread }: HeaderProps) {
           onReset={() => update({ date: "" })}
         />
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">Dashboard Version: V1.0.7</span>
+        <span className="version">Dashboard Version: V1.0.8</span>
       </div>
     </header>
   );

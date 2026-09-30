@@ -24,6 +24,12 @@ export interface LoadProgress {
 }
 
 const entries = new Map<string, LoadProgress>();
+/**
+ * Download size per thread/date, kept after its entry is cleared. Coming back
+ * to a build whose download is still cached only reprocesses it, and the
+ * processing estimate is scaled by this.
+ */
+const sizes = new Map<string, number>();
 const listeners = new Set<() => void>();
 
 export function progressKey(thread: string, date: string): string {
@@ -35,11 +41,15 @@ export function reportProgress(key: string, patch: Partial<LoadProgress>): void 
     phase: "download",
     startedAt: Date.now(),
     loaded: 0,
-    total: 0,
+    total: sizes.get(key) ?? 0,
     processStartedAt: 0,
     computed: false,
   };
-  entries.set(key, { ...prev, ...patch });
+  const next = { ...prev, ...patch };
+  entries.set(key, next);
+  if (next.total > 0) {
+    sizes.set(key, next.total);
+  }
   listeners.forEach((fn) => fn());
 }
 
@@ -94,9 +104,20 @@ function writeNumber(key: string, value: number): void {
   }
 }
 
+/**
+ * Fold a new measurement into the stored one: clamped, so a load that stalled
+ * (a backgrounded tab, a machine under load) can't be taken at face value, and
+ * averaged with the last, so one odd load only moves the next estimate halfway.
+ */
+function learn(key: string, fallback: number, value: number, min: number, max: number): void {
+  const clamped = Math.min(max, Math.max(min, value));
+  writeNumber(key, (readNumber(key, fallback) + clamped) / 2);
+}
+
 export const learned = {
   compressionRatio: () => readNumber(RATIO_KEY, DEFAULT_RATIO),
-  setCompressionRatio: (ratio: number) => writeNumber(RATIO_KEY, ratio),
+  setCompressionRatio: (ratio: number) => learn(RATIO_KEY, DEFAULT_RATIO, ratio, 1, 20),
   processMsPerMB: () => readNumber(PROCESS_KEY, DEFAULT_PROCESS_MS_PER_MB),
-  setProcessMsPerMB: (ms: number) => writeNumber(PROCESS_KEY, ms),
+  setProcessMsPerMB: (ms: number) =>
+    learn(PROCESS_KEY, DEFAULT_PROCESS_MS_PER_MB, ms, 40, 2000),
 };

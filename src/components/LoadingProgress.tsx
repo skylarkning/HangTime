@@ -85,12 +85,15 @@ export function LoadingProgress({ thread, date }: LoadingProgressProps) {
   );
 
   // Progress events can pause (a slow network, the worker between reports);
-  // tick anyway so the time remaining keeps counting down.
-  const [now, setNow] = useState(Date.now());
+  // redraw anyway so the time remaining keeps counting down. The clock is read
+  // at render, not kept from the last tick, which could be older than the
+  // start of processing.
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 500);
+    const id = setInterval(() => setTick((t) => t + 1), 500);
     return () => clearInterval(id);
   }, []);
+  const now = Date.now();
 
   if (!progress) {
     return <div className="state-msg">Loading and processing hang data…</div>;
