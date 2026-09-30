@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Explorer } from "@/views/Explorer";
+import { Guide } from "@/views/Guide";
 import { Overview } from "@/views/Overview";
 import { useViewState } from "@/state/useViewState";
 import { useProcessedProfile } from "@/queries/hooks";
@@ -22,6 +23,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/top-hangs" element={<Explorer />} />
+        <Route path="/guide" element={<Guide />} />
         <Route path="*" element={<Overview />} />
       </Routes>
     </div>

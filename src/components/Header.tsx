@@ -15,6 +15,7 @@ const TABS: Tab[] = [
   { id: "top-hangs", label: "Top Hangs", to: "/top-hangs" },
   { id: "per-site", label: "Per-Site" },
   { id: "alerts", label: "Alerts" },
+  { id: "guide", label: "Guide", to: "/guide" },
 ];
 
 const FEEDBACK_URL = "https://github.com/skylarkning/HangTime/issues";
@@ -69,7 +70,7 @@ export function Header({ date, thread }: HeaderProps) {
           onReset={() => update({ date: "" })}
         />
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">Dashboard Version: V1.0.6</span>
+        <span className="version">Dashboard Version: V1.0.7</span>
       </div>
     </header>
   );

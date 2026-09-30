@@ -490,3 +490,67 @@ tr.diff-changed td { background: #fbeede; color: var(--text); }
   background: none; border: none; color: var(--blue); padding: 0; text-align: left;
 }
 .build-pop-reset:hover { text-decoration: underline; }
+
+/* Guide */
+.guide {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: grid; grid-template-columns: 220px minmax(0, 760px); gap: 40px;
+  justify-content: center; padding: 28px 24px 64px;
+}
+.guide-toc {
+  position: sticky; top: 0; align-self: start;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.guide-toc-title {
+  font-size: 10.5px; font-weight: 600; color: var(--muted-2);
+  text-transform: uppercase; letter-spacing: 0.4px; margin: 0 0 6px 10px;
+}
+.guide-toc button {
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  background: none; border: none; border-radius: 6px; padding: 6px 10px; color: var(--muted);
+}
+.guide-toc button:hover { background: var(--surface-alt); color: var(--text); }
+.guide-body { display: flex; flex-direction: column; gap: 16px; font-size: 14px; line-height: 1.6; }
+.guide-intro h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+.guide-intro p { color: var(--muted); font-size: 15px; }
+.guide-section {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px 24px; scroll-margin-top: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.guide-section h2 { font-size: 17px; font-weight: 700; }
+.guide-section a, .guide-section .link { color: var(--blue); }
+.guide-section code {
+  font-family: var(--mono); font-size: 12.5px;
+  background: var(--surface-alt); padding: 1px 5px; border-radius: 4px;
+}
+.guide-section .link { font-size: inherit; }
+.guide-callout {
+  background: var(--blue-light); border-left: 3px solid var(--blue);
+  border-radius: 6px; padding: 10px 14px; font-size: 13.5px;
+}
+.guide-note { font-size: 13px; color: var(--muted); }
+.guide-steps { padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.guide-steps li::marker { font-weight: 700; color: var(--blue); }
+.guide-list { display: flex; flex-direction: column; }
+.guide-item {
+  display: grid; grid-template-columns: 180px 1fr; gap: 16px;
+  padding: 10px 0; border-top: 1px solid var(--surface-alt);
+}
+.guide-item:first-child { border-top: none; padding-top: 0; }
+.guide-item dt { font-weight: 600; font-size: 13.5px; }
+.guide-item dd { color: var(--muted); font-size: 13.5px; }
+.guide-table { border-collapse: collapse; font-size: 13.5px; }
+.guide-table th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--muted-2); font-weight: 600; padding: 0 16px 6px 0;
+}
+.guide-table td { padding: 7px 16px 7px 0; border-top: 1px solid var(--surface-alt); color: var(--muted); }
+.guide-table td:first-child { white-space: nowrap; }
+.guide-swatch { font-weight: 600; }
+@media (max-width: 860px) {
+  .guide { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
+  .guide-toc { position: static; flex-direction: row; flex-wrap: wrap; }
+  .guide-toc-title { display: none; }
+  .guide-item { grid-template-columns: 1fr; gap: 2px; }
+}
