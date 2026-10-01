@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Header } from "@/components/Header";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { Explorer } from "@/views/Explorer";
 import { Guide } from "@/views/Guide";
 import { Overview } from "@/views/Overview";
@@ -11,6 +13,12 @@ export function App() {
   const { state } = useViewState();
   // Read from cache (already requested by the active view) just to label the header.
   const query = useProcessedProfile(state.thread as ThreadKind, state.date);
+  // Latches once any build has been shown, so a later build switch, which also
+  // has no data for a moment, doesn't count as a first load.
+  const shownData = useRef(false);
+  if (query.data) {
+    shownData.current = true;
+  }
 
   return (
     <div className="app">
@@ -20,6 +28,7 @@ export function App() {
         date={query.data?.date ?? (state.date === "current" ? undefined : state.date)}
         thread={state.thread}
       />
+      <UpdateBanner firstLoad={!shownData.current} />
       <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/top-hangs" element={<Explorer />} />

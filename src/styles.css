@@ -570,3 +570,17 @@ tr.diff-changed td { background: #fbeede; color: var(--text); }
   .guide-toc-title { display: none; }
   .guide-item { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* New-version notice */
+.update-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 20px; font-size: 13px;
+  background: var(--blue-light); border-bottom: 1px solid #bcd9fb; color: var(--text);
+}
+.update-banner .btn { padding: 4px 12px; font-size: 12px; }
+.update-note { color: var(--muted); font-size: 12px; }
+.update-dismiss {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--muted); padding: 0 4px;
+}
+.update-dismiss:hover { color: var(--text); }
