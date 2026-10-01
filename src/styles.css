@@ -545,8 +545,9 @@ tr.diff-changed td { background: #fbeede; color: var(--text); }
   text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
   color: var(--muted-2); font-weight: 600; padding: 0 16px 6px 0;
 }
-.guide-table td { padding: 7px 16px 7px 0; border-top: 1px solid var(--surface-alt); color: var(--muted); }
+.guide-table td { padding: 7px 16px 7px 0; border-top: 1px solid var(--surface-alt); color: var(--muted); vertical-align: top; }
 .guide-table td:first-child { white-space: nowrap; }
+.guide-table .num { text-align: right; padding-right: 0; padding-left: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .guide-swatch { font-weight: 600; }
 @media (max-width: 860px) {
   .guide { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }

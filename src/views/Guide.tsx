@@ -19,9 +19,90 @@ const SECTIONS: { id: string; title: string }[] = [
   { id: "top-hangs-page", title: "The Top Hangs page" },
   { id: "hang-detail", title: "Reading a hang's details" },
   { id: "trends", title: "How trends are worked out" },
+  { id: "annotations", title: "Hang annotations" },
   { id: "builds", title: "Builds and shareable links" },
   { id: "glossary", title: "Glossary" },
   { id: "help", title: "Questions and feedback" },
+];
+
+/**
+ * Every annotation the main-thread data carries, from where Firefox records
+ * it (checked against mozilla-central, 2026-09). Shares are from build
+ * 20260926, weighted by hang count.
+ */
+const ANNOTATIONS: { name: string; meaning: ReactNode; share: string }[] = [
+  {
+    name: "PaintPending",
+    meaning: (
+      <>
+        A repaint of the window was waiting when the hang started, so the screen
+        froze on its last frame. Nearly every hang delays a paint, so this is
+        normal; a hang <em>without</em> it is the unusual case.
+      </>
+    ),
+    share: "97%",
+  },
+  {
+    name: "UserInteracting",
+    meaning: (
+      <>
+        The user had clicked, typed, scrolled or otherwise used Firefox in the 5
+        seconds before the hang, so they very likely noticed it. A good signal
+        for which hangs hurt most.
+      </>
+    ),
+    share: "48%",
+  },
+  {
+    name: "BeforeStartupCrashAndHangTrackingEnded",
+    meaning: (
+      <>
+        Firefox was still starting up: the hang came before Firefox marked
+        startup as finished, which happens once the first window has opened and
+        settled. Points at slow startup work.
+      </>
+    ),
+    share: "21%",
+  },
+  {
+    name: "ExternalCPUHigh",
+    meaning: (
+      <>
+        Other programs were using nearly all of the computer's processor, more
+        than every core but one. The hang may say more about an overloaded
+        machine than about Firefox's code.
+      </>
+    ),
+    share: "13%",
+  },
+  {
+    name: "browser.tabs.opening",
+    meaning: (
+      <>
+        A new tab was being opened. The value gives the stage:{" "}
+        <code>initting</code> (the tab was being created),{" "}
+        <code>animated</code> or <code>not-animated</code> (it was opening, with
+        or without the tab animation).
+      </>
+    ),
+    share: "3%",
+  },
+  {
+    name: "ShutdownImpending",
+    meaning: <>Firefox was already shutting down when the hang happened.</>,
+    share: "1.5%",
+  },
+  {
+    name: "Unrecovered",
+    meaning: (
+      <>
+        Firefox never recovered: it was still stuck when it was closed or killed.
+        The report was saved and sent on the next launch, and its duration is
+        recorded as the 8-second cap.
+      </>
+    ),
+    share: "0.02%",
+  },
 ];
 
 function scrollTo(id: string) {
@@ -268,7 +349,11 @@ export function Guide() {
               Extra context Firefox saved with the hang. For example,{" "}
               <code>UserInteracting</code> means the user was actively using the
               browser when it froze. The percentage is the share of this hang's
-              reports carrying that note.
+              reports carrying that note. See{" "}
+              <button className="link" onClick={() => scrollTo("annotations")}>
+                Hang annotations
+              </button>{" "}
+              for the full list.
             </Item>
             <Item name="Stack">
               Every frame, starting at frame 0, where the thread was stuck, and
@@ -330,6 +415,46 @@ export function Guide() {
           <p className="guide-note">
             Trends need the timeseries data. If it hasn't loaded, trend badges are
             blank and the Trend filter is greyed out.
+          </p>
+        </Section>
+
+        <Section id="annotations">
+          <p>
+            When Firefox records a hang, it also notes what else was going on at
+            that moment. These notes are <b>annotations</b>. They help tell a hang
+            the user felt from one they didn't, or a slow computer from slow
+            Firefox code. In a hang's details, each annotation shows the share of
+            that hang's reports that carried it.
+          </p>
+          <table className="guide-table">
+            <thead>
+              <tr>
+                <th>Annotation</th>
+                <th>What it means</th>
+                <th className="num">All hangs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ANNOTATIONS.map((a) => (
+                <tr key={a.name}>
+                  <td><code>{a.name}</code></td>
+                  <td>{a.meaning}</td>
+                  <td className="num">{a.share}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="guide-note">
+            <b>All hangs</b> is the share of every main-thread hang on build
+            2026-09-26 that carried the annotation, to show what's normal. A hang
+            can carry several at once.
+          </p>
+          <p className="guide-note">
+            Firefox defines two more that only web-page (content) processes record,
+            so they don't show up here today: <code>PendingInput</code>, the number
+            of clicks or key presses waiting to be handled during the hang, and{" "}
+            <code>PaintWhileInterruptingJS</code>, when Firefox had paused a page's
+            script to draw a tab you'd just switched to.
           </p>
         </Section>
 
