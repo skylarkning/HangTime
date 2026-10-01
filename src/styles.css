@@ -547,8 +547,23 @@ tr.diff-changed td { background: #fbeede; color: var(--text); }
 }
 .guide-table td { padding: 7px 16px 7px 0; border-top: 1px solid var(--surface-alt); color: var(--muted); vertical-align: top; }
 .guide-table td:first-child { white-space: nowrap; }
-.guide-table .num { text-align: right; padding-right: 0; padding-left: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .guide-swatch { font-weight: 600; }
+.guide-annotations { display: flex; flex-direction: column; }
+.guide-annotation {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 0; border-top: 1px solid var(--surface-alt);
+}
+.guide-annotation:first-child { border-top: none; padding-top: 0; }
+.guide-annotation-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.guide-annotation-head code { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.guide-annotation p { font-size: 13.5px; color: var(--muted); }
+.guide-example {
+  background: var(--bg); border-radius: 6px; padding: 6px 10px; margin-top: 2px;
+}
+.guide-example span {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--muted-2); margin-right: 8px;
+}
 @media (max-width: 860px) {
   .guide { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
   .guide-toc { position: static; flex-direction: row; flex-wrap: wrap; }

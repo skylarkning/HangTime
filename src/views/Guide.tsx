@@ -26,35 +26,53 @@ const SECTIONS: { id: string; title: string }[] = [
 ];
 
 /**
- * Every annotation the main-thread data carries, from where Firefox records
- * it (checked against mozilla-central, 2026-09). Shares are from build
- * 20260926, weighted by hang count.
+ * Every hang annotation Firefox can record, found by searching mozilla-central
+ * (2026-09-18) for BackgroundHangAnnotator implementations, AddAnnotation
+ * calls, and annotations built directly in the hang monitor. The aggregation
+ * job passes them through unchanged.
  */
-const ANNOTATIONS: { name: string; meaning: ReactNode; share: string }[] = [
+const ANNOTATIONS: {
+  name: string;
+  where?: string;
+  meaning: ReactNode;
+  example: ReactNode;
+}[] = [
   {
     name: "PaintPending",
     meaning: (
       <>
-        A repaint of the window was waiting when the hang started, so the screen
-        froze on its last frame. Nearly every hang delays a paint, so this is
-        normal; a hang <em>without</em> it is the unusual case.
+        A repaint was waiting when the hang started, so the screen stayed frozen
+        on its last frame. Most hangs delay a paint, so most carry this; one{" "}
+        <em>without</em> it is the unusual case.
       </>
     ),
-    share: "97%",
+    example: (
+      <>
+        A page changes what's on screen, then runs a script for two seconds. The
+        change can't be drawn until the script finishes, so the hang carries{" "}
+        <code>PaintPending</code>.
+      </>
+    ),
   },
   {
     name: "UserInteracting",
     meaning: (
       <>
-        The user had clicked, typed, scrolled or otherwise used Firefox in the 5
-        seconds before the hang, so they very likely noticed it. A good signal
-        for which hangs hurt most.
+        The user clicked, typed, scrolled or otherwise used Firefox in the 5
+        seconds before the hang, so they very likely noticed it. A good signal for
+        which hangs hurt most.
       </>
     ),
-    share: "48%",
+    example: (
+      <>
+        Someone is typing in a form. A second after their last key press, Firefox
+        freezes for half a second.
+      </>
+    ),
   },
   {
     name: "BeforeStartupCrashAndHangTrackingEnded",
+    where: "Parent process",
     meaning: (
       <>
         Firefox was still starting up: the hang came before Firefox marked
@@ -62,46 +80,105 @@ const ANNOTATIONS: { name: string; meaning: ReactNode; share: string }[] = [
         settled. Points at slow startup work.
       </>
     ),
-    share: "21%",
+    example: (
+      <>
+        Firefox launches and restores 40 tabs from the last session. It hangs
+        while still setting them up.
+      </>
+    ),
+  },
+  {
+    name: "ShutdownImpending",
+    where: "Parent process",
+    meaning: <>Firefox was already shutting down when the hang happened.</>,
+    example: (
+      <>
+        The user quits Firefox, and it hangs while closing windows and saving the
+        session.
+      </>
+    ),
   },
   {
     name: "ExternalCPUHigh",
+    where: "Windows and macOS only",
     meaning: (
       <>
-        Other programs were using nearly all of the computer's processor, more
-        than every core but one. The hang may say more about an overloaded
-        machine than about Firefox's code.
+        Other programs were using nearly all of the computer's processor: more
+        than every core but one, and at least half. The hang may say more about an
+        overloaded machine than about Firefox's code.
       </>
     ),
-    share: "13%",
+    example: (
+      <>
+        On an 8-core laptop, a video export is using over 87.5% of the processor
+        when Firefox hangs.
+      </>
+    ),
   },
   {
     name: "browser.tabs.opening",
     meaning: (
       <>
         A new tab was being opened. The value gives the stage:{" "}
-        <code>initting</code> (the tab was being created),{" "}
+        <code>initting</code> (the tab was being created), then{" "}
         <code>animated</code> or <code>not-animated</code> (it was opening, with
         or without the tab animation).
       </>
     ),
-    share: "3%",
-  },
-  {
-    name: "ShutdownImpending",
-    meaning: <>Firefox was already shutting down when the hang happened.</>,
-    share: "1.5%",
+    example: (
+      <>
+        The user presses Ctrl+T and the new tab takes 300 ms to appear while it
+        slides into the tab strip: <code>browser.tabs.opening = animated</code>.
+      </>
+    ),
   },
   {
     name: "Unrecovered",
     meaning: (
       <>
         Firefox never recovered: it was still stuck when it was closed or killed.
-        The report was saved and sent on the next launch, and its duration is
-        recorded as the 8-second cap.
+        The hang monitor saved the report and sent it on the next launch, with the
+        duration recorded as the 8-second cap.
       </>
     ),
-    share: "0.02%",
+    example: (
+      <>
+        A page freezes Firefox completely and the user force-quits it. The next
+        time Firefox starts, that hang is reported as <code>Unrecovered</code>.
+      </>
+    ),
+  },
+  {
+    name: "PendingInput",
+    where: "Web-page (content) processes only",
+    meaning: (
+      <>
+        How many clicks, key presses and other input events were waiting to be
+        handled when the hang happened. The value is the count.
+      </>
+    ),
+    example: (
+      <>
+        A page's script blocks its process while the user clicks three times:{" "}
+        <code>PendingInput = 3</code>.
+      </>
+    ),
+  },
+  {
+    name: "PaintWhileInterruptingJS",
+    where: "Web-page (content) processes only",
+    meaning: (
+      <>
+        Firefox had paused a page's long-running script so it could draw a tab
+        the user had just switched to.
+      </>
+    ),
+    example: (
+      <>
+        The user switches to a tab whose page is stuck in a heavy script. Firefox
+        interrupts the script to show the tab, and hangs while doing so.
+      </>
+    ),
   },
 ];
 
@@ -424,37 +501,30 @@ export function Guide() {
             that moment. These notes are <b>annotations</b>. They help tell a hang
             the user felt from one they didn't, or a slow computer from slow
             Firefox code. In a hang's details, each annotation shows the share of
-            that hang's reports that carried it.
+            that hang's reports that carried it, and a hang can carry several.
           </p>
-          <table className="guide-table">
-            <thead>
-              <tr>
-                <th>Annotation</th>
-                <th>What it means</th>
-                <th className="num">All hangs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ANNOTATIONS.map((a) => (
-                <tr key={a.name}>
-                  <td><code>{a.name}</code></td>
-                  <td>{a.meaning}</td>
-                  <td className="num">{a.share}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p>These are all the annotations Firefox can record:</p>
+          <div className="guide-annotations">
+            {ANNOTATIONS.map((a) => (
+              <div key={a.name} className="guide-annotation">
+                <div className="guide-annotation-head">
+                  <code>{a.name}</code>
+                  {a.where && <span className="chip neutral">{a.where}</span>}
+                </div>
+                <p>{a.meaning}</p>
+                <p className="guide-example">
+                  <span>Example</span>
+                  {a.example}
+                </p>
+              </div>
+            ))}
+          </div>
           <p className="guide-note">
-            <b>All hangs</b> is the share of every main-thread hang on build
-            2026-09-26 that carried the annotation, to show what's normal. A hang
-            can carry several at once.
-          </p>
-          <p className="guide-note">
-            Firefox defines two more that only web-page (content) processes record,
-            so they don't show up here today: <code>PendingInput</code>, the number
-            of clicks or key presses waiting to be handled during the hang, and{" "}
-            <code>PaintWhileInterruptingJS</code>, when Firefox had paused a page's
-            script to draw a tab you'd just switched to.
+            HangTime shows main-thread hangs, so the two content-process
+            annotations rarely or never appear in it. Firefox can also tag a hang
+            with any user interaction it's timing, but{" "}
+            <code>browser.tabs.opening</code> is the only one defined outside of
+            tests.
           </p>
         </Section>
 
