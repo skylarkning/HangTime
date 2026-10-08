@@ -317,8 +317,8 @@ export function Guide() {
               means lots of hang time nobody has filed yet.
             </Item>
             <Item name="Hang volume over time">
-              Daily hang time or count for the tracked top signatures. Use this to
-              see the overall direction, not exact totals. Switch between{" "}
+              Daily hang time or count for the tracked top signatures, one bar per
+              day. Use this to see the overall direction, not exact totals. Switch between{" "}
               <em>ms</em> and <em>count</em>, pick a window (7d to 365d), or drag
               across the chart to zoom in.
             </Item>
@@ -389,9 +389,11 @@ export function Guide() {
               Shown when the hang is tracked by a bug, with a link to it.
             </Item>
             <Item name="History">
-              The hang's daily time or count across the window, with its peak day
-              marked. For a bug that covers several stacks, grey dashed lines show
-              the biggest ones, so you can see which stack is driving a change. Tick{" "}
+              The hang's daily time or count across the window, one bar per day.
+              For a bug that covers several stacks, each bar is the bug total split
+              into its biggest stacks, with the rest summed as <em>Other</em>, so you
+              can see which stack is driving a change. Hover a bar for each part and
+              the day's total. Tick{" "}
               <em>Fx releases</em> to add Firefox milestones:{" "}
               <span className="guide-swatch" style={{ color: "#d76e00" }}>Release</span>,{" "}
               <span className="guide-swatch" style={{ color: "#0250bb" }}>Beta</span>{" "}

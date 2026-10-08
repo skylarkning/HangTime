@@ -1,70 +1,56 @@
 /**
  * System-level hang volume over the rolling window: one series (total hang ms
- * or count per day, summed across the tracked top signatures), drawn as a
- * filled area line. A single series, so no legend — the card title names it.
- * The peak day is marked with a dot; a crosshair tooltip reads exact values.
+ * or count per day, summed across the tracked top signatures), drawn as daily
+ * bars. Day-to-day volume is noisy, and a line through it reads every wobble as
+ * a movement; bars keep each day separate, so the eye averages them into a
+ * level instead. A single series, so no legend: the card title names it.
  */
 
 import {
+  BarElement,
   CategoryScale,
   Chart,
-  Filler,
   LinearScale,
-  LineElement,
-  PointElement,
   Tooltip,
   type ChartData,
   type ChartOptions,
 } from "chart.js";
-import { Line } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import type { Metric } from "@/data/timeseries";
-import type { LineChartRef } from "./ChartRange";
+import type { BarChartRef } from "./ChartRange";
+import { barGapPlugin, topSegmentRadius } from "./barStyle";
 import { formatDate } from "@/format";
 
-Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
+Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, barGapPlugin);
 
-// Single-series blue, from the dashboard's accent. Area fill is the same hue at
-// low alpha so the line stays the salient mark.
-const LINE = "#0250bb";
-const FILL = "rgba(2, 80, 187, 0.12)";
+// Single series in the dashboard's accent blue.
+const BAR = "#0250bb";
 
 interface VolumeChartProps {
   dates: string[];
   values: number[];
   metric: Metric;
   /** Exposes the chart instance so the caller can drag-select a range on it. */
-  chartRef?: LineChartRef;
+  chartRef?: BarChartRef;
 }
 
 export function VolumeChart({ dates, values, metric, chartRef }: VolumeChartProps) {
-  let peak = 0;
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] > values[peak]) {
-      peak = i;
-    }
-  }
   const unit = metric === "ms" ? "ms" : "hangs";
 
-  const data: ChartData<"line"> = {
+  const data: ChartData<"bar"> = {
     labels: dates.map(formatDate),
     datasets: [
       {
         label: metric === "ms" ? "Hang ms" : "Hang count",
         data: values,
-        borderColor: LINE,
-        backgroundColor: FILL,
-        fill: true,
-        pointRadius: values.map((_, i) => (i === peak ? 4 : 0)),
-        pointBackgroundColor: LINE,
-        pointBorderColor: "#fff",
-        pointBorderWidth: 1.5,
-        borderWidth: 2,
-        tension: 0.25,
+        backgroundColor: BAR,
+        borderRadius: topSegmentRadius,
+        borderSkipped: "start",
       },
     ],
   };
 
-  const options: ChartOptions<"line"> = {
+  const options: ChartOptions<"bar"> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: "index", intersect: false },
@@ -85,5 +71,5 @@ export function VolumeChart({ dates, values, metric, chartRef }: VolumeChartProp
     },
   };
 
-  return <Line ref={chartRef} data={data} options={options} />;
+  return <Bar ref={chartRef} data={data} options={options} />;
 }

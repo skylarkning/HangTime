@@ -221,8 +221,8 @@ function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
           Hang volume over time
           <InfoTip label="Hang volume over time">
             Total hang {metric === "ms" ? "time" : "count"} per day summed across
-            the tracked top signatures, over {visibleDates.length} days ({span}).
-            The dot marks the peak day in view. This is tracked volume, not the
+            the tracked top signatures, over {visibleDates.length} days ({span}),
+            one bar per day. This is tracked volume, not the
             absolute total, so it reads as a health trend rather than a raw
             quantity.
             <span className="eg">

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chart as ChartJS } from "chart.js";
 
 /** What react-chartjs-2 wants for a `<Line ref>`. */
-export type LineChartRef = React.MutableRefObject<ChartJS<"line"> | null | undefined>;
+export type BarChartRef = React.MutableRefObject<ChartJS<"bar"> | null | undefined>;
 
 /** Inclusive index window into a chart's full date array. */
 export interface DateRange {
@@ -100,7 +100,7 @@ export function ChartRangeControls({
  * inside that wrapper.
  */
 export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void) {
-  const chartRef: LineChartRef = useRef<ChartJS<"line"> | null | undefined>(null);
+  const chartRef: BarChartRef = useRef<ChartJS<"bar"> | null | undefined>(null);
   const [drag, setDrag] = useState<{ fromX: number; toX: number } | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;

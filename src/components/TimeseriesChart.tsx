@@ -1,8 +1,10 @@
 /**
- * Per-hang prevalence over time. For a plain signature this is a single line;
- * for a bug-merged signature it shows the bug total plus the top contributing
- * stacks as separate lines, so a regression in one stack is visible even when
- * the bug total is flat.
+ * Per-hang prevalence over time, as daily bars: daily volume is noisy, and a
+ * line reads every wobble as a movement. For a plain signature it's one series.
+ * For a bug-merged signature each day's bar is the bug total, stacked from its
+ * top contributing stacks plus the rest as "Other", so a regression in one
+ * stack shows as its segment growing even when the bug total is flat. (The
+ * total is exactly the sum of the members, so the stack adds up.)
  *
  * The legend is rendered as HTML rather than via Chart.js's canvas legend:
  * stack labels are long function signatures, and only DOM text can reliably
@@ -11,17 +13,16 @@
 
 import { useMemo, useState } from "react";
 import {
+  BarElement,
   CategoryScale,
   Chart,
   LinearScale,
-  LineElement,
-  PointElement,
   Tooltip,
   type ChartData,
   type ChartOptions,
   type Plugin,
 } from "chart.js";
-import { Line } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import type { HangSignature } from "@/processing/types";
 import type {
   MemberSeries,
@@ -37,6 +38,7 @@ import {
   type ReleaseColumnMarker,
 } from "@/data/releases";
 import { ChartRangeControls, useChartRange, useDragZoom } from "./ChartRange";
+import { barGapPlugin, topSegmentRadius } from "./barStyle";
 import { InfoTip } from "./InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
 
@@ -48,7 +50,7 @@ import { memberStacks } from "@/processing/signatureKey";
  * the line is colored by the most prominent milestone (release > beta > nightly).
  * Markers come through the chart's plugin options as `releaseMarkers.markers`.
  */
-const releaseMarkersPlugin: Plugin<"line"> = {
+const releaseMarkersPlugin: Plugin<"bar"> = {
   id: "releaseMarkers",
   afterDatasetsDraw(chart) {
     const opts = (chart.options.plugins as Record<string, unknown> | undefined)
@@ -109,23 +111,26 @@ const releaseMarkersPlugin: Plugin<"line"> = {
 Chart.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Tooltip,
+  barGapPlugin,
   releaseMarkersPlugin,
 );
 
-// Distinct, color-blind-friendly line colors for the individual member stacks.
-const MEMBER_COLORS = [
-  "#1f77b4",
-  "#ff7f0e",
-  "#2ca02c",
-  "#d62728",
-  "#9467bd",
-  "#8c564b",
-];
-const TOTAL_COLOR = "#111827";
-const MAX_MEMBER_LINES = 5;
+/** A plain signature's single series, in the dashboard's accent blue. */
+const SINGLE_COLOR = "#0250bb";
+/**
+ * Member stacks of a bug, in fixed order (blue, orange, aqua, yellow, magenta).
+ * Checked with the dataviz palette validator: colorblind-safe between
+ * neighbours, but three are under 3:1 against white, so every value is also in
+ * the tooltip and the member list.
+ */
+const MEMBER_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
+/** The members past the top few, summed: neutral, so it recedes. */
+const OTHER_COLOR = "#c2c2cb";
+const MAX_MEMBER_LINES = MEMBER_COLORS.length;
+/** A surface-colored line between stacked segments, so neighbours read apart. */
+const SEGMENT_GAP = { borderColor: "#ffffff", borderWidth: { top: 2 } };
 
 interface LegendItem {
   label: string;
@@ -201,17 +206,6 @@ function memberLabels(members: MemberSeries[]): string[] {
 }
 
 
-/**
- * Point sizes for a series that can contain gaps. Days with data are drawn as
- * part of a line and need no marker, but a day whose neighbours are both
- * missing has no line segment, so it only appears if it is given one.
- */
-function isolatedPointRadius(data: (number | null)[]): number[] {
-  return data.map((value, i) =>
-    value != null && data[i - 1] == null && data[i + 1] == null ? 2.5 : 0,
-  );
-}
-
 export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
@@ -252,7 +246,6 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const totalAffected = series.totalAffected && clip(series.totalAffected);
 
   const trend = computeTrend(series, metric);
-  const peakIndex = dates.indexOf(trend.peakDate);
   const unit = metric === "ms" ? "ms" : "hangs";
   const fmt = (v: number) => Math.round(v).toLocaleString();
 
@@ -284,29 +277,23 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     chips.push({ text: `${trend.trackedStacks} tracked stacks`, tone: "neutral" });
   }
 
-  const datasets: ChartData<"line">["datasets"] = [];
+  const datasets: ChartData<"bar">["datasets"] = [];
   const legend: LegendItem[] = [];
 
-  const addLine = (
+  const addBars = (
     label: string,
     title: string,
     data: (number | null)[],
     color: string,
-    extra: object,
+    extra: object = {},
   ) => {
     datasets.push({
       label,
+      // A null day is missing data, not zero: it simply has no bar.
       data,
-      borderColor: color,
       backgroundColor: color,
-      // Lines carry no point markers, except where a day has data but both
-      // neighbours are missing: that day has no segment to be drawn as part
-      // of, so without a marker it would vanish entirely.
-      pointRadius: isolatedPointRadius(data),
-      tension: 0.2,
-      // A null day is missing data, not zero, so leave a visible gap rather
-      // than drawing a line straight through it.
-      spanGaps: false,
+      borderRadius: topSegmentRadius,
+      borderSkipped: "start",
       ...extra,
     });
     legend.push({ label, title, color });
@@ -317,42 +304,45 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const memberLabelsAll = showMembers ? memberLabels(series.members) : [];
 
   if (showMembers) {
-    const bug = signature.knownBug;
-    addLine(
-      bug ? `Bug ${bug.id} total` : "Total",
-      bug ? bug.summary : `Sum across ${series.members.length} stacks`,
-      pick(series.total),
-      TOTAL_COLOR,
-      { borderWidth: 2.5 },
-    );
-    series.members.slice(0, MAX_MEMBER_LINES).forEach((member, i) => {
-      addLine(
+    const shown = series.members.slice(0, MAX_MEMBER_LINES);
+    shown.forEach((member, i) => {
+      addBars(
         `#${i + 1} ${memberLabelsAll[i]}`,
         stackPath(member),
         pick(member),
-        MEMBER_COLORS[i % MEMBER_COLORS.length],
-        { borderWidth: 1.5, borderDash: [4, 3] },
+        MEMBER_COLORS[i],
+        { stack: "members", ...SEGMENT_GAP },
       );
     });
+    const rest = series.members.slice(MAX_MEMBER_LINES);
+    if (rest.length > 0) {
+      // Whatever the top members don't account for. Null where none of the
+      // rest has data that day, so it draws nothing rather than a zero.
+      const restTotal = pick(series.total).map((total, day) => {
+        let others: number | null = null;
+        for (const member of rest) {
+          const value = pick(member)[day];
+          if (value != null) {
+            others = (others ?? 0) + value;
+          }
+        }
+        return total == null ? null : others;
+      });
+      addBars(
+        `Other ${rest.length} stack${rest.length === 1 ? "" : "s"}`,
+        `The ${rest.length} smaller stacks merged into this bug, summed`,
+        restTotal,
+        OTHER_COLOR,
+        { stack: "members", ...SEGMENT_GAP },
+      );
+    }
   } else {
     const only = series.members[0];
-    addLine(shortFunc(only.label), stackPath(only), pick(only), MEMBER_COLORS[0], {
-      borderWidth: 2,
-    });
+    addBars(shortFunc(only.label), stackPath(only), pick(only), SINGLE_COLOR);
   }
+  const dayTotals = pick(series.total);
 
-  // Mark the peak on the primary line rather than annotating every point.
-  if (peakIndex >= 0 && datasets[0]) {
-    const base = isolatedPointRadius(pick(series.total));
-    datasets[0].pointRadius = dates.map((_, i) =>
-      i === peakIndex ? 4 : base[i],
-    );
-    datasets[0].pointBackgroundColor = datasets[0].borderColor as string;
-    datasets[0].pointBorderColor = "#fff";
-    datasets[0].pointBorderWidth = 1.5;
-  }
-
-  const data: ChartData<"line"> = {
+  const data: ChartData<"bar"> = {
     labels: dates.map(formatDate),
     datasets,
   };
@@ -362,7 +352,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const releaseMarkers = showReleases ? releaseMarkersForDates(dates) : [];
   const markerByIndex = new Map(releaseMarkers.map((m) => [m.index, m]));
 
-  const options: ChartOptions<"line"> = {
+  const options: ChartOptions<"bar"> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: "index", intersect: false },
@@ -384,9 +374,20 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             return `${base}  ·  ${parts.join(", ")}`;
           },
           label: (ctx) => {
+            if (ctx.raw == null) {
+              return "";
+            }
             const value = ctx.parsed.y ?? 0;
-            const unit = metric === "ms" ? "ms" : "hangs";
             return `${ctx.dataset.label}: ${value.toLocaleString()} ${unit}`;
+          },
+          // A stacked bar's height is the bug total; say it, since no single
+          // segment does.
+          footer: (items) => {
+            if (!showMembers) {
+              return "";
+            }
+            const total = dayTotals[items[0]?.dataIndex ?? -1];
+            return total == null ? "" : `Total: ${total.toLocaleString()} ${unit}`;
           },
           // Append that single day's distinct affected users (and share of the
           // day's users) when the artifact carried client metrics.
@@ -410,8 +411,13 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       },
     },
     scales: {
-      x: { ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8 } },
+      x: {
+        stacked: true,
+        grid: { display: false },
+        ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8 },
+      },
       y: {
+        stacked: true,
         beginAtZero: true,
         title: {
           display: true,
@@ -436,8 +442,9 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             ms/count toggle to switch metric, a preset window to narrow the
             range, or drag across the chart to zoom into one.
             <span className="eg">
-              The dot marks the peak day; dashed <em>grey</em> lines are the top
-              contributing stacks for a bug. Tick <em>Fx releases</em> to mark
+              For a bug that covers several stacks, each bar is the bug total,
+              split into its biggest stacks (the rest are summed as{" "}
+              <em>Other</em>), so you can see which stack drives a change. Tick <em>Fx releases</em> to mark
               the Firefox train milestones (<code>Fx NN</code>) as vertical
               lines, so a spike or a new hang can be lined up against a release:{" "}
               <em style={{ color: "#d76e00" }}>orange = Release</em>,{" "}
@@ -489,7 +496,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
         ))}
       </div>
       <div className="ts-chart chart-zoomable" {...dragProps}>
-        <Line ref={chartRef} data={data} options={options} />
+        <Bar ref={chartRef} data={data} options={options} />
         {marquee}
       </div>
       <div className="ts-legend">
@@ -528,9 +535,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
                     className="member-rank"
                     style={{
                       color:
-                        i < MAX_MEMBER_LINES
-                          ? MEMBER_COLORS[i % MEMBER_COLORS.length]
-                          : "var(--muted-2)",
+                        i < MAX_MEMBER_LINES ? MEMBER_COLORS[i] : "var(--muted-2)",
                     }}
                   >
                     #{i + 1}
