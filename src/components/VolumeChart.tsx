@@ -4,6 +4,8 @@
  * bars. Day-to-day volume is noisy, and a line through it reads every wobble as
  * a movement; bars keep each day separate, so the eye averages them into a
  * level instead. A single series, so no legend: the card title names it.
+ * Where the chart is too narrow for a year of separated daily bars, the caller
+ * passes weekly buckets and each bar is that week's daily average.
  */
 
 import {
@@ -24,6 +26,7 @@ import {
   barGapPlugin,
   topSegmentRadius,
 } from "./barStyle";
+import { averageInto, type DayBuckets } from "./dayBuckets";
 import { formatDate } from "@/format";
 
 Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, barGapPlugin);
@@ -35,19 +38,22 @@ interface VolumeChartProps {
   dates: string[];
   values: number[];
   metric: Metric;
+  /** How the days are grouped into bars (daily, or weekly when space is short). */
+  buckets: DayBuckets;
   /** Exposes the chart instance so the caller can drag-select a range on it. */
   chartRef?: BarChartRef;
 }
 
-export function VolumeChart({ dates, values, metric, chartRef }: VolumeChartProps) {
+export function VolumeChart({ dates, values, metric, buckets, chartRef }: VolumeChartProps) {
   const unit = metric === "ms" ? "ms" : "hangs";
+  const weekly = buckets.size > 1;
 
   const data: ChartData<"bar"> = {
-    labels: dates.map(formatDate),
+    labels: buckets.starts.map((day) => formatDate(dates[day])),
     datasets: [
       {
         label: metric === "ms" ? "Hang ms" : "Hang count",
-        data: values,
+        data: averageInto(buckets, values),
         backgroundColor: BAR,
         borderRadius: topSegmentRadius,
         borderSkipped: false,
@@ -65,7 +71,15 @@ export function VolumeChart({ dates, values, metric, chartRef }: VolumeChartProp
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (ctx) => `${(ctx.parsed.y ?? 0).toLocaleString()} ${unit}`,
+          title: (items) => {
+            const bar = items[0]?.dataIndex ?? 0;
+            const start = formatDate(dates[buckets.starts[bar]]);
+            return weekly ? `${start} – ${formatDate(dates[buckets.ends[bar]])}` : start;
+          },
+          label: (ctx) => {
+            const value = Math.round(ctx.parsed.y ?? 0).toLocaleString();
+            return weekly ? `${value} ${unit} per day (week average)` : `${value} ${unit}`;
+          },
         },
       },
     },

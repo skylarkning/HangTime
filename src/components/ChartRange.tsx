@@ -9,8 +9,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chart as ChartJS } from "chart.js";
+import type { DayBuckets } from "./dayBuckets";
 
-/** What react-chartjs-2 wants for a `<Line ref>`. */
+/** What react-chartjs-2 wants for a `<Bar ref>`. */
 export type BarChartRef = React.MutableRefObject<ChartJS<"bar"> | null | undefined>;
 
 /** Inclusive index window into a chart's full date array. */
@@ -97,10 +98,13 @@ export function ChartRangeControls({
 /**
  * Drag-to-zoom over a category-axis chart. Attach `chartRef` to the chart,
  * spread `dragProps` on a positioned wrapper around it, and render `marquee`
- * inside that wrapper.
+ * inside that wrapper. When the chart groups days into weekly bars, set
+ * `bucketsRef.current` to its buckets each render, so a drag across bars zooms
+ * to the days they cover.
  */
 export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void) {
   const chartRef: BarChartRef = useRef<ChartJS<"bar"> | null | undefined>(null);
+  const bucketsRef = useRef<DayBuckets | null>(null);
   const [drag, setDrag] = useState<{ fromX: number; toX: number } | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
@@ -115,10 +119,13 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
     return Math.min(Math.max(x, scale.left), scale.right);
   };
 
-  const indexAt = (x: number): number => {
+  /** Day under pixel `x`: a bar's first day, or with `end`, its last. */
+  const indexAt = (x: number, end = false): number => {
     const scale = chartRef.current?.scales.x;
-    const value = scale?.getValueForPixel(x);
-    return range.start + Math.round(value ?? 0);
+    const bar = Math.round(scale?.getValueForPixel(x) ?? 0);
+    const buckets = bucketsRef.current;
+    const day = buckets ? ((end ? buckets.ends : buckets.starts)[bar] ?? bar) : bar;
+    return range.start + day;
   };
 
   const onMouseDown = (event: React.MouseEvent) => {
@@ -141,7 +148,7 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
       return;
     }
     const a = indexAt(Math.min(current.fromX, current.toX));
-    const b = indexAt(Math.max(current.fromX, current.toX));
+    const b = indexAt(Math.max(current.fromX, current.toX), true);
     if (b - a >= MIN_SPAN) {
       onZoom({ start: a, end: b });
     }
@@ -183,5 +190,5 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
       />
     ) : null;
 
-  return { chartRef, dragProps: { onMouseDown }, marquee };
+  return { chartRef, bucketsRef, dragProps: { onMouseDown }, marquee };
 }
