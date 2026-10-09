@@ -122,9 +122,12 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
   /** Day under pixel `x`: a bar's first day, or with `end`, its last. */
   const indexAt = (x: number, end = false): number => {
     const scale = chartRef.current?.scales.x;
-    const bar = Math.round(scale?.getValueForPixel(x) ?? 0);
     const buckets = bucketsRef.current;
-    const day = buckets ? ((end ? buckets.ends : buckets.starts)[bar] ?? bar) : bar;
+    // At the plot's very edge the pixel rounds to half a bar past the last
+    // one, so keep it on a real bar.
+    const bars = buckets ? buckets.starts.length : range.end - range.start + 1;
+    const bar = Math.min(bars - 1, Math.max(0, Math.round(scale?.getValueForPixel(x) ?? 0)));
+    const day = buckets ? (end ? buckets.ends : buckets.starts)[bar] : bar;
     return range.start + day;
   };
 
