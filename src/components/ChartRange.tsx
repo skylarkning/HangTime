@@ -170,7 +170,16 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
         setDrag((d) => (d ? { ...d, toX: x } : d));
       }
     };
-    const up = () => finish.current();
+    // Finish at where the button came up, not at the last drawn drag: the
+    // final mousemove's state may not have rendered yet, which would end the
+    // selection short of the release point.
+    const up = (event: MouseEvent) => {
+      const x = canvasX(event.clientX);
+      if (x != null && dragRef.current) {
+        dragRef.current = { ...dragRef.current, toX: x };
+      }
+      finish.current();
+    };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
     return () => {
