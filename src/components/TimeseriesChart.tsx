@@ -391,6 +391,8 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     plugins: {
       legend: { display: false },
       tooltip: {
+        // Only the stacks that had something that day or week.
+        filter: (item) => item.raw != null && item.raw !== 0,
         callbacks: {
           // Surface the train milestones on the tooltip title when the hovered
           // day carries one, so the marker is identifiable without a legend.
@@ -408,9 +410,6 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             return `${base}  ·  ${parts.join(", ")}`;
           },
           label: (ctx) => {
-            if (ctx.raw == null) {
-              return "";
-            }
             const value = Math.round(ctx.parsed.y ?? 0).toLocaleString();
             return `${ctx.dataset.label}: ${value} ${weekly ? `${unit}/day` : unit}`;
           },

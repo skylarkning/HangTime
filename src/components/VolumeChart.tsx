@@ -53,7 +53,10 @@ export function VolumeChart({ dates, values, metric, buckets, chartRef }: Volume
     datasets: [
       {
         label: metric === "ms" ? "Hang ms" : "Hang count",
-        data: averageInto(buckets, values),
+        // The daily totals carry 0 for a day with no data, and across every
+        // tracked signature a true zero doesn't happen, so leave those days out
+        // rather than let them drag a week's average down.
+        data: averageInto(buckets, values, (day) => values[day] > 0),
         backgroundColor: BAR,
         borderRadius: topSegmentRadius,
         borderSkipped: false,
