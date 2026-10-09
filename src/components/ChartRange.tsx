@@ -9,9 +9,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chart as ChartJS } from "chart.js";
-import type { DayBuckets } from "./dayBuckets";
 
-/** What react-chartjs-2 wants for a `<Bar ref>`. */
+/** What react-chartjs-2 wants for a `<Line ref>`. */
 export type BarChartRef = React.MutableRefObject<ChartJS<"bar"> | null | undefined>;
 
 /** Inclusive index window into a chart's full date array. */
@@ -98,13 +97,10 @@ export function ChartRangeControls({
 /**
  * Drag-to-zoom over a category-axis chart. Attach `chartRef` to the chart,
  * spread `dragProps` on a positioned wrapper around it, and render `marquee`
- * inside that wrapper. When the chart groups days into weekly bars, set
- * `bucketsRef.current` to its buckets each render, so a drag across bars zooms
- * to the days they cover.
+ * inside that wrapper.
  */
 export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void) {
   const chartRef: BarChartRef = useRef<ChartJS<"bar"> | null | undefined>(null);
-  const bucketsRef = useRef<DayBuckets | null>(null);
   const [drag, setDrag] = useState<{ fromX: number; toX: number } | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
@@ -119,16 +115,13 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
     return Math.min(Math.max(x, scale.left), scale.right);
   };
 
-  /** Day under pixel `x`: a bar's first day, or with `end`, its last. */
-  const indexAt = (x: number, end = false): number => {
+  const indexAt = (x: number): number => {
     const scale = chartRef.current?.scales.x;
-    const buckets = bucketsRef.current;
-    // At the plot's very edge the pixel rounds to half a bar past the last
-    // one, so keep it on a real bar.
-    const bars = buckets ? buckets.starts.length : range.end - range.start + 1;
-    const bar = Math.min(bars - 1, Math.max(0, Math.round(scale?.getValueForPixel(x) ?? 0)));
-    const day = buckets ? (end ? buckets.ends : buckets.starts)[bar] : bar;
-    return range.start + day;
+    // At the plot's very edge the pixel rounds to half a day past the last
+    // one, so keep it on a real day.
+    const days = range.end - range.start + 1;
+    const day = Math.round(scale?.getValueForPixel(x) ?? 0);
+    return range.start + Math.min(days - 1, Math.max(0, day));
   };
 
   const onMouseDown = (event: React.MouseEvent) => {
@@ -151,7 +144,7 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
       return;
     }
     const a = indexAt(Math.min(current.fromX, current.toX));
-    const b = indexAt(Math.max(current.fromX, current.toX), true);
+    const b = indexAt(Math.max(current.fromX, current.toX));
     if (b - a >= MIN_SPAN) {
       onZoom({ start: a, end: b });
     }
@@ -202,5 +195,5 @@ export function useDragZoom(range: DateRange, onZoom: (range: DateRange) => void
       />
     ) : null;
 
-  return { chartRef, bucketsRef, dragProps: { onMouseDown }, marquee };
+  return { chartRef, dragProps: { onMouseDown }, marquee };
 }

@@ -7,10 +7,14 @@
  * between neighbours while there's room for one, bars capped at 24px, and a
  * rounded data-end only when the bar is wide enough to show it.
  *
- * Neighbouring bars are always kept visibly apart. Where days are too narrow
- * for a 2px gap, bars touch and each gets a 1px surface-colored edge instead: a
- * gap that thin, computed from fractional widths, renders as a blurred tint
- * rather than a line, while an edge drawn inside the bar stays crisp.
+ * Neighbouring bars are always kept visibly apart, one bar per day. Where
+ * days are too narrow for a 2px gap, bars touch and each gets a separator edge
+ * one device pixel wide, drawn inside it in the surface color: a gap that thin,
+ * computed from fractional widths, renders as a blurred tint rather than a
+ * line. On a 2x screen a device pixel is half a CSS pixel, so a year still fits
+ * the narrow detail pane with every day separate. Where even that won't fit, a
+ * chart asks for at least MIN_DEVICE_PX_PER_DAY per day and scrolls instead
+ * (see chartWidth.ts).
  */
 
 import type { BorderRadius, Chart, Plugin, ScriptableContext } from "chart.js";
@@ -22,9 +26,11 @@ const RADIUS_PX = 4;
 const MIN_SLOT_FOR_GAP = 5;
 /** Below this bar width a 4px corner would round the bar into a point. */
 const MIN_BAR_FOR_RADIUS = 10;
-/** Below this many pixels per day, even a 1px edge would leave mostly white. */
-const MIN_SLOT_FOR_EDGE = 2;
-const EDGE_PX = 1;
+/**
+ * Fewest device pixels a day can have and still show a bar and a separator:
+ * one of each.
+ */
+export const MIN_DEVICE_PX_PER_DAY = 2;
 /** Between stacked segments of one bar. */
 const SEGMENT_GAP_PX = 2;
 /** The chart surface; separators are drawn in it so they read as space. */
@@ -43,17 +49,19 @@ function barWidth(chart: Chart): number {
 }
 
 /**
- * Separator edges, drawn in BAR_SEPARATOR_COLOR inside each bar: a 1px left
- * edge between touching bars, and a 2px top edge between the segments of a
+ * Separator edges, drawn in BAR_SEPARATOR_COLOR inside each bar: a one-device-
+ * pixel left edge between touching bars, and a 2px top edge between the segments of a
  * stacked bar (any chart with more than one dataset stacks here).
  */
 export function barBorderWidth(ctx: ScriptableContext<"bar">) {
   const { chart } = ctx;
   const slot = slotWidth(chart);
-  const touching = slot < MIN_SLOT_FOR_GAP && slot >= MIN_SLOT_FOR_EDGE;
+  const dpr = chart.currentDevicePixelRatio || 1;
+  const touching = slot < MIN_SLOT_FOR_GAP && slot * dpr >= MIN_DEVICE_PX_PER_DAY;
   return {
     top: chart.data.datasets.length > 1 ? SEGMENT_GAP_PX : 0,
-    left: touching ? EDGE_PX : 0,
+    // One device pixel, in CSS pixels.
+    left: touching ? 1 / dpr : 0,
     right: 0,
     bottom: 0,
   };

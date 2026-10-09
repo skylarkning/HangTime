@@ -24,7 +24,7 @@ import type { HangSignature, ProcessedProfile } from "@/processing/types";
 import type { ThreadKind } from "@/data/dataSource";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import { VolumeChart } from "@/components/VolumeChart";
-import { bucketSizeFor, makeBuckets, useElementWidth } from "@/components/dayBuckets";
+import { useDailyChartWidth } from "@/components/chartWidth";
 import { ChartRangeControls, useChartRange, useDragZoom } from "@/components/ChartRange";
 import { InfoTip } from "@/components/InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
@@ -204,8 +204,8 @@ function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
   const [metric, setMetric] = useState<Metric>("ms");
   const dates = index?.dates ?? [];
   const { range, setRange, reset } = useChartRange(dates.length);
-  const { chartRef, bucketsRef, dragProps, marquee } = useDragZoom(range, setRange);
-  const [boxRef, width] = useElementWidth();
+  const { chartRef, dragProps, marquee } = useDragZoom(range, setRange);
+  const { scrollRef, minWidth } = useDailyChartWidth(range.end - range.start + 1);
 
   if (!index) {
     return null;
@@ -215,11 +215,6 @@ function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
   const visibleDates = dates.slice(range.start, range.end + 1);
   const values = all.slice(range.start, range.end + 1);
   const span = `${formatDate(visibleDates[0])} – ${formatDate(visibleDates[visibleDates.length - 1])}`;
-  const buckets = makeBuckets(
-    visibleDates.length,
-    bucketSizeFor(visibleDates.length, width),
-  );
-  bucketsRef.current = buckets;
 
   return (
     <div className="ov-card">
@@ -229,8 +224,7 @@ function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
           <InfoTip label="Hang volume over time">
             Total hang {metric === "ms" ? "time" : "count"} per day summed across
             the tracked top signatures, over {visibleDates.length} days ({span}),
-            one bar per day, or per week (as a daily average) when the chart is
-            too narrow to fit separate daily bars. This is tracked volume, not the
+            one bar per day. This is tracked volume, not the
             absolute total, so it reads as a health trend rather than a raw
             quantity.
             <span className="eg">
@@ -256,15 +250,17 @@ function VolumeCard({ index }: { index: TimeseriesIndex | undefined }) {
           </div>
         </div>
       </div>
-      <div ref={boxRef} className="ov-chart chart-zoomable" {...dragProps}>
-        <VolumeChart
-          dates={visibleDates}
-          values={values}
-          metric={metric}
-          buckets={buckets}
-          chartRef={chartRef}
-        />
-        {marquee}
+      <div ref={scrollRef} className="chart-scroll">
+        <div className="ov-chart chart-zoomable" style={{ minWidth }} {...dragProps}>
+          <VolumeChart
+            dates={visibleDates}
+            values={values}
+            metric={metric}
+            axisRight={!!minWidth}
+            chartRef={chartRef}
+          />
+          {marquee}
+        </div>
       </div>
     </div>
   );

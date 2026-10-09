@@ -584,3 +584,6 @@ tr.diff-changed td { background: #fbeede; color: var(--text); }
   font-size: 18px; line-height: 1; color: var(--muted); padding: 0 4px;
 }
 .update-dismiss:hover { color: var(--text); }
+
+/* A daily chart too wide for its box scrolls sideways (see chartWidth.ts). */
+.chart-scroll { overflow-x: auto; overflow-y: hidden; }

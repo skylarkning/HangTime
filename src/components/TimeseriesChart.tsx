@@ -38,18 +38,13 @@ import {
   type ReleaseColumnMarker,
 } from "@/data/releases";
 import { ChartRangeControls, useChartRange, useDragZoom } from "./ChartRange";
+import { useDailyChartWidth } from "./chartWidth";
 import {
   BAR_SEPARATOR_COLOR,
   barBorderWidth,
   barGapPlugin,
   topSegmentRadius,
 } from "./barStyle";
-import {
-  averageInto,
-  bucketSizeFor,
-  makeBuckets,
-  useElementWidth,
-} from "./dayBuckets";
 import { InfoTip } from "./InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
 
@@ -220,8 +215,8 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const [showAll, setShowAll] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
   const { range, setRange, reset } = useChartRange(index?.dates.length ?? 0);
-  const { chartRef, bucketsRef, dragProps, marquee } = useDragZoom(range, setRange);
-  const [boxRef, width] = useElementWidth();
+  const { chartRef, dragProps, marquee } = useDragZoom(range, setRange);
+  const { scrollRef, minWidth } = useDailyChartWidth(range.end - range.start + 1);
 
   const series = useMemo<ResolvedSeries | null>(
     () => (index ? index.resolveByStack(memberStacks(signature)) : null),
@@ -254,19 +249,6 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   // have to be clipped to match.
   const affected = series.total.affected && clip(series.total.affected);
   const totalAffected = series.totalAffected && clip(series.totalAffected);
-
-  // Daily bars where each day has room to stay separate, else weekly bars of
-  // the daily average (see dayBuckets). Everything charted goes through these.
-  const buckets = makeBuckets(dates.length, bucketSizeFor(dates.length, width));
-  bucketsRef.current = buckets;
-  const weekly = buckets.size > 1;
-  const dayTotals = pick(series.total);
-  // In a stack, a member missing on a day the bug total has data contributed
-  // nothing that day, so every segment averages over the same days.
-  const totalKnown = (day: number) => dayTotals[day] != null;
-  const barTotals = averageInto(buckets, dayTotals);
-  const barAffected = affected && averageInto(buckets, affected);
-  const barTotalAffected = totalAffected && averageInto(buckets, totalAffected);
 
   const trend = computeTrend(series, metric);
   const unit = metric === "ms" ? "ms" : "hangs";
@@ -334,7 +316,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       addBars(
         `#${i + 1} ${memberLabelsAll[i]}`,
         stackPath(member),
-        averageInto(buckets, pick(member), totalKnown),
+        pick(member),
         MEMBER_COLORS[i],
         { stack: "members" },
       );
@@ -356,32 +338,25 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       addBars(
         `Other ${rest.length} stack${rest.length === 1 ? "" : "s"}`,
         `The ${rest.length} smaller stacks merged into this bug, summed`,
-        averageInto(buckets, restTotal, totalKnown),
+        restTotal,
         OTHER_COLOR,
         { stack: "members" },
       );
     }
   } else {
     const only = series.members[0];
-    addBars(
-      shortFunc(only.label),
-      stackPath(only),
-      averageInto(buckets, pick(only)),
-      SINGLE_COLOR,
-    );
+    addBars(shortFunc(only.label), stackPath(only), pick(only), SINGLE_COLOR);
   }
+  const dayTotals = pick(series.total);
 
   const data: ChartData<"bar"> = {
-    labels: buckets.starts.map((day) => formatDate(dates[day])),
+    labels: dates.map(formatDate),
     datasets,
   };
 
   // Firefox releases that fall inside the visible window, drawn as dashed
-  // vertical markers by releaseMarkersPlugin. Placed by each bar's last day, so
-  // a milestone lands on the bar (day or week) that contains it.
-  const releaseMarkers = showReleases
-    ? releaseMarkersForDates(buckets.ends.map((day) => dates[day]))
-    : [];
+  // vertical markers by releaseMarkersPlugin.
+  const releaseMarkers = showReleases ? releaseMarkersForDates(dates) : [];
   const markerByIndex = new Map(releaseMarkers.map((m) => [m.index, m]));
 
   const options: ChartOptions<"bar"> = {
@@ -391,15 +366,13 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     plugins: {
       legend: { display: false },
       tooltip: {
-        // Only the stacks that had something that day or week.
+        // Only the stacks that had something that day.
         filter: (item) => item.raw != null && item.raw !== 0,
         callbacks: {
           // Surface the train milestones on the tooltip title when the hovered
           // day carries one, so the marker is identifiable without a legend.
           title: (items) => {
-            const bar = items[0]?.dataIndex ?? 0;
-            const start = formatDate(dates[buckets.starts[bar]]);
-            const base = weekly ? `${start} – ${formatDate(dates[buckets.ends[bar]])}` : start;
+            const base = items[0]?.label ?? "";
             const marker = markerByIndex.get(items[0]?.dataIndex ?? -1);
             if (!marker) {
               return base;
@@ -410,8 +383,8 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             return `${base}  ·  ${parts.join(", ")}`;
           },
           label: (ctx) => {
-            const value = Math.round(ctx.parsed.y ?? 0).toLocaleString();
-            return `${ctx.dataset.label}: ${value} ${weekly ? `${unit}/day` : unit}`;
+            const value = ctx.parsed.y ?? 0;
+            return `${ctx.dataset.label}: ${value.toLocaleString()} ${unit}`;
           },
           // A stacked bar's height is the bug total; say it, since no single
           // segment does.
@@ -419,38 +392,26 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             if (!showMembers) {
               return "";
             }
-            const total = barTotals[items[0]?.dataIndex ?? -1];
-            if (total == null) {
-              return "";
-            }
-            const value = Math.round(total).toLocaleString();
-            return weekly
-              ? `Total: ${value} ${unit} per day (week average)`
-              : `Total: ${value} ${unit}`;
+            const total = dayTotals[items[0]?.dataIndex ?? -1];
+            return total == null ? "" : `Total: ${total.toLocaleString()} ${unit}`;
           },
-          // Append the day's distinct affected users (and share of the day's
-          // users) when the artifact carried client metrics. Users can't be
-          // added up across days, so a weekly bar gives the daily average.
+          // Append that single day's distinct affected users (and share of the
+          // day's users) when the artifact carried client metrics.
           afterBody: (items) => {
             if (!affected) {
               return "";
             }
             const i = items[0]?.dataIndex ?? 0;
-            const users = barAffected?.[i];
+            const users = affected[i];
             if (users == null) {
-              return weekly
-                ? "Affected users: no data for this week"
-                : "Affected users: no data for this day";
+              return "Affected users: no data for this day";
             }
-            const dayTotal = barTotalAffected?.[i];
+            const dayTotal = totalAffected?.[i];
             const share =
               dayTotal != null && dayTotal > 0
                 ? ` (${((users / dayTotal) * 100).toFixed(2)}% of users)`
                 : "";
-            const count = Math.round(users).toLocaleString();
-            return weekly
-              ? `Affected users: ${count} per day${share} (week average)`
-              : `Affected users: ${count}${share}`;
+            return `Affected users: ${users.toLocaleString()}${share}`;
           },
         },
       },
@@ -464,11 +425,12 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       y: {
         stacked: true,
         beginAtZero: true,
+        // A chart too wide for its box opens scrolled to the newest days, so
+        // the axis goes on that side to stay in view.
+        position: minWidth ? "right" : "left",
         title: {
           display: true,
-          text:
-            (metric === "ms" ? "hang ms" : "hang count") +
-            (weekly ? " per day (weekly avg)" : ""),
+          text: metric === "ms" ? "hang ms" : "hang count",
         },
       },
     },
@@ -482,12 +444,10 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
     <div className="detail-section">
       <div className="ts-header">
         <h3>
-          History ({dates.length} days{weekly ? ", weekly bars" : ""})
+          History ({dates.length} days)
           <InfoTip label="History">
             Daily hang time (or count) for this signature across the window, so
-            you can see if it’s rising, spiking, or newly appeared. When the
-            window has more days than fit as separate bars, each bar is a week
-            (that week’s average per day). Use the
+            you can see if it’s rising, spiking, or newly appeared. Use the
             ms/count toggle to switch metric, a preset window to narrow the
             range, or drag across the chart to zoom into one.
             <span className="eg">
@@ -544,9 +504,11 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
           </span>
         ))}
       </div>
-      <div ref={boxRef} className="ts-chart chart-zoomable" {...dragProps}>
-        <Bar ref={chartRef} data={data} options={options} />
-        {marquee}
+      <div ref={scrollRef} className="chart-scroll">
+        <div className="ts-chart chart-zoomable" style={{ minWidth }} {...dragProps}>
+          <Bar ref={chartRef} data={data} options={options} />
+          {marquee}
+        </div>
       </div>
       <div className="ts-legend">
         {legend.map((item) => (

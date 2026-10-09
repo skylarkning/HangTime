@@ -318,9 +318,7 @@ export function Guide() {
             </Item>
             <Item name="Hang volume over time">
               Daily hang time or count for the tracked top signatures, one bar per
-              day. If the window has more days than fit as separate bars, each bar
-              is a week instead, showing that week's average per day. Use this to
-              see the overall direction, not exact totals. Switch between{" "}
+              day. Use this to see the overall direction, not exact totals. Switch between{" "}
               <em>ms</em> and <em>count</em>, pick a window (7d to 365d), or drag
               across the chart to zoom in.
             </Item>
@@ -391,9 +389,7 @@ export function Guide() {
               Shown when the hang is tracked by a bug, with a link to it.
             </Item>
             <Item name="History">
-              The hang's daily time or count across the window, one bar per day,
-              or one per week (that week's average per day) when the window is too
-              long for daily bars to fit, as at 365 days in the details pane.
+              The hang's daily time or count across the window, one bar per day.
               For a bug that covers several stacks, each bar is the bug total split
               into its biggest stacks, with the rest summed as <em>Other</em>, so you
               can see which stack is driving a change. Hover a bar for each part and
