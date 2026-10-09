@@ -6,6 +6,11 @@
  * day. The plugin sizes bars from the pixels each day actually gets: a 2px gap
  * between neighbours while there's room for one, bars capped at 24px, and a
  * rounded data-end only when the bar is wide enough to show it.
+ *
+ * Neighbouring bars are always kept visibly apart. Where days are too narrow
+ * for a 2px gap, bars touch and each gets a 1px surface-colored edge instead: a
+ * gap that thin, computed from fractional widths, renders as a blurred tint
+ * rather than a line, while an edge drawn inside the bar stays crisp.
  */
 
 import type { BorderRadius, Chart, Plugin, ScriptableContext } from "chart.js";
@@ -17,6 +22,13 @@ const RADIUS_PX = 4;
 const MIN_SLOT_FOR_GAP = 5;
 /** Below this bar width a 4px corner would round the bar into a point. */
 const MIN_BAR_FOR_RADIUS = 10;
+/** Below this many pixels per day, even a 1px edge would leave mostly white. */
+const MIN_SLOT_FOR_EDGE = 2;
+const EDGE_PX = 1;
+/** Between stacked segments of one bar. */
+const SEGMENT_GAP_PX = 2;
+/** The chart surface; separators are drawn in it so they read as space. */
+export const BAR_SEPARATOR_COLOR = "#ffffff";
 
 /** Pixels available per day on the x axis. */
 function slotWidth(chart: Chart): number {
@@ -28,6 +40,23 @@ function slotWidth(chart: Chart): number {
 function barWidth(chart: Chart): number {
   const slot = slotWidth(chart);
   return Math.min(MAX_BAR_PX, slot >= MIN_SLOT_FOR_GAP ? slot - GAP_PX : slot);
+}
+
+/**
+ * Separator edges, drawn in BAR_SEPARATOR_COLOR inside each bar: a 1px left
+ * edge between touching bars, and a 2px top edge between the segments of a
+ * stacked bar (any chart with more than one dataset stacks here).
+ */
+export function barBorderWidth(ctx: ScriptableContext<"bar">) {
+  const { chart } = ctx;
+  const slot = slotWidth(chart);
+  const touching = slot < MIN_SLOT_FOR_GAP && slot >= MIN_SLOT_FOR_EDGE;
+  return {
+    top: chart.data.datasets.length > 1 ? SEGMENT_GAP_PX : 0,
+    left: touching ? EDGE_PX : 0,
+    right: 0,
+    bottom: 0,
+  };
 }
 
 export const barGapPlugin: Plugin<"bar"> = {

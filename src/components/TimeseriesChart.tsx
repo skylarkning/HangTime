@@ -38,7 +38,12 @@ import {
   type ReleaseColumnMarker,
 } from "@/data/releases";
 import { ChartRangeControls, useChartRange, useDragZoom } from "./ChartRange";
-import { barGapPlugin, topSegmentRadius } from "./barStyle";
+import {
+  BAR_SEPARATOR_COLOR,
+  barBorderWidth,
+  barGapPlugin,
+  topSegmentRadius,
+} from "./barStyle";
 import { InfoTip } from "./InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
 
@@ -129,8 +134,6 @@ const MEMBER_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
 /** The members past the top few, summed: neutral, so it recedes. */
 const OTHER_COLOR = "#c2c2cb";
 const MAX_MEMBER_LINES = MEMBER_COLORS.length;
-/** A surface-colored line between stacked segments, so neighbours read apart. */
-const SEGMENT_GAP = { borderColor: "#ffffff", borderWidth: { top: 2 } };
 
 interface LegendItem {
   label: string;
@@ -293,7 +296,9 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
       data,
       backgroundColor: color,
       borderRadius: topSegmentRadius,
-      borderSkipped: "start",
+      borderSkipped: false,
+      borderColor: BAR_SEPARATOR_COLOR,
+      borderWidth: barBorderWidth,
       ...extra,
     });
     legend.push({ label, title, color });
@@ -311,7 +316,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
         stackPath(member),
         pick(member),
         MEMBER_COLORS[i],
-        { stack: "members", ...SEGMENT_GAP },
+        { stack: "members" },
       );
     });
     const rest = series.members.slice(MAX_MEMBER_LINES);
@@ -333,7 +338,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
         `The ${rest.length} smaller stacks merged into this bug, summed`,
         restTotal,
         OTHER_COLOR,
-        { stack: "members", ...SEGMENT_GAP },
+        { stack: "members" },
       );
     }
   } else {

@@ -18,7 +18,12 @@ import {
 import { Bar } from "react-chartjs-2";
 import type { Metric } from "@/data/timeseries";
 import type { BarChartRef } from "./ChartRange";
-import { barGapPlugin, topSegmentRadius } from "./barStyle";
+import {
+  BAR_SEPARATOR_COLOR,
+  barBorderWidth,
+  barGapPlugin,
+  topSegmentRadius,
+} from "./barStyle";
 import { formatDate } from "@/format";
 
 Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, barGapPlugin);
@@ -45,7 +50,9 @@ export function VolumeChart({ dates, values, metric, chartRef }: VolumeChartProp
         data: values,
         backgroundColor: BAR,
         borderRadius: topSegmentRadius,
-        borderSkipped: "start",
+        borderSkipped: false,
+        borderColor: BAR_SEPARATOR_COLOR,
+        borderWidth: barBorderWidth,
       },
     ],
   };
