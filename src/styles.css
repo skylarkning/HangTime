@@ -65,7 +65,13 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
 .version { font-size: 11px; color: var(--muted-2); white-space: nowrap; }
 
 /* Explorer master-detail layout */
-.explorer { display: grid; grid-template-columns: 1fr 42%; flex: 1; min-height: 0; }
+/* The row is pinned to the space left under the header (minmax(0, 1fr)) so
+   the list and the detail pane each scroll on their own; an auto row grows to
+   fit the whole list, and then the page scrolls and the details go with it. */
+.explorer {
+  display: grid; grid-template-columns: 1fr 42%; grid-template-rows: minmax(0, 1fr);
+  flex: 1; min-height: 0;
+}
 .list-pane { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
 
 .filter-bar {

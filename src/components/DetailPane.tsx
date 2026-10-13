@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Frame,
   HangSignature,
@@ -40,6 +40,13 @@ export function DetailPane({
   timeseries,
   onSelect,
 }: DetailPaneProps) {
+  // A newly selected hang starts at the top of its details, not wherever the
+  // previous one had been scrolled to.
+  const paneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    paneRef.current?.scrollTo(0, 0);
+  }, [signature?.id]);
+
   if (!signature) {
     return <div className="detail-empty">Select a hang to see its stack.</div>;
   }
@@ -56,7 +63,7 @@ export function DetailPane({
   }
 
   return (
-    <div className="detail-pane">
+    <div className="detail-pane" ref={paneRef}>
       {signature.knownBug && (
         <div className="detail-section">
           <h3>Bugzilla</h3>
