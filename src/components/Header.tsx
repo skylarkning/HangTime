@@ -1,7 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { useViewState } from "@/state/useViewState";
 import bhrLogo from "@/assets/bhr-logo.png";
-import { BuildPicker } from "./BuildPicker";
 
 interface Tab {
   id: string;
@@ -21,13 +19,11 @@ const TABS: Tab[] = [
 const FEEDBACK_URL = "https://github.com/skylarkning/HangTime/issues";
 
 interface HeaderProps {
-  date?: string;
   thread: string;
 }
 
-export function Header({ date, thread }: HeaderProps) {
+export function Header({ thread }: HeaderProps) {
   const location = useLocation();
-  const { state, update } = useViewState();
 
   return (
     <header className="top">
@@ -63,12 +59,6 @@ export function Header({ date, thread }: HeaderProps) {
         >
           Bug &amp; Feedback
         </a>
-        <BuildPicker
-          date={date}
-          pinned={state.date !== "current"}
-          onSelect={(next) => update({ date: next })}
-          onReset={() => update({ date: "" })}
-        />
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
         <span className="version">Dashboard Version: V1.0.10</span>
       </div>

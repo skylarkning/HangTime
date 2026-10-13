@@ -11,7 +11,8 @@ import type { ThreadKind } from "@/data/dataSource";
 
 export function App() {
   const { state } = useViewState();
-  // Read from cache (already requested by the active view) just to label the header.
+  // Read from cache (already requested by the active view), to tell the update
+  // banner whether anything has been shown yet.
   const query = useProcessedProfile(state.thread as ThreadKind, state.date);
   // Latches once any build has been shown, so a later build switch, which also
   // has no data for a moment, doesn't count as a first load.
@@ -22,12 +23,7 @@ export function App() {
 
   return (
     <div className="app">
-      {/* Fall back to the requested build so the picker stays reachable when
-          that build has no artifact -- otherwise the only way out is the URL. */}
-      <Header
-        date={query.data?.date ?? (state.date === "current" ? undefined : state.date)}
-        thread={state.thread}
-      />
+      <Header thread={state.thread} />
       <UpdateBanner firstLoad={!shownData.current} />
       <Routes>
         <Route path="/" element={<ToTopHangs />} />

@@ -1,6 +1,6 @@
 /**
- * Build-date selector. The header shows which build is on screen; clicking it
- * opens a native date input so any other build can be loaded.
+ * Build-date selector. Shows which build is on screen (see BuildBar); clicking
+ * it opens a native date input so any other build can be loaded.
  *
  * A native <input type="date"> rather than a hand-rolled calendar: it is
  * keyboard accessible and localized for free, and the set of valid builds is
@@ -62,10 +62,10 @@ export function BuildPicker({ date, pinned, onSelect, onReset }: BuildPickerProp
         className={`pill live build-pill${pinned ? " pinned" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="Choose a build date"
+        title={pinned ? "Choose a build date" : "Showing the latest build. Choose another date"}
         onClick={() => setOpen((v) => !v)}
       >
-        Build {formatDate(date)}
+        {formatDate(date)}
         <span className="build-caret" aria-hidden="true">▾</span>
       </button>
       {open && (
