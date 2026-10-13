@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Explorer } from "@/views/Explorer";
@@ -30,11 +30,22 @@ export function App() {
       />
       <UpdateBanner firstLoad={!shownData.current} />
       <Routes>
-        <Route path="/" element={<Overview />} />
+        <Route path="/" element={<ToTopHangs />} />
         <Route path="/top-hangs" element={<Explorer />} />
+        <Route path="/overview" element={<Overview />} />
         <Route path="/guide" element={<Guide />} />
-        <Route path="*" element={<Overview />} />
+        <Route path="*" element={<ToTopHangs />} />
       </Routes>
     </div>
   );
+}
+
+/**
+ * HangTime opens on Top Hangs. The bare address, and any unknown route, lands
+ * there with its query (build, thread, …) kept. Overview used to live at "/",
+ * so an old Overview link now opens Top Hangs instead.
+ */
+function ToTopHangs() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: "/top-hangs", search }} replace />;
 }

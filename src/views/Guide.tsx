@@ -15,8 +15,8 @@ const ISSUES_URL = "https://github.com/skylarkning/HangTime/issues/new/choose";
 const SECTIONS: { id: string; title: string }[] = [
   { id: "about", title: "What is HangTime?" },
   { id: "quick-start", title: "Quick start" },
-  { id: "overview-page", title: "The Overview page" },
   { id: "top-hangs-page", title: "The Top Hangs page" },
+  { id: "overview-page", title: "The Overview page" },
   { id: "hang-detail", title: "Reading a hang's details" },
   { id: "trends", title: "How trends are worked out" },
   { id: "annotations", title: "Hang annotations" },
@@ -208,7 +208,7 @@ function Item({ name, children }: { name: ReactNode; children: ReactNode }) {
 
 export function Guide() {
   const { search } = useLocation();
-  const overview = { pathname: "/", search };
+  const overview = { pathname: "/overview", search };
   const topHangs = { pathname: "/top-hangs", search };
 
   return (
@@ -292,6 +292,50 @@ export function Guide() {
           </ol>
         </Section>
 
+        <Section id="top-hangs-page">
+          <p>
+            <Link to={topHangs}>Top Hangs</Link> is where HangTime opens: the full
+            list of signatures on the left, with the selected hang's details on
+            the right.
+          </p>
+          <dl className="guide-list">
+            <Item name="Filter box">
+              Type part of a function or library name, for example{" "}
+              <code>nsFrame</code> or <code>xul.dll</code>, to keep only the hangs
+              whose stack contains it. Matches are highlighted. All-lowercase text
+              matches any case; include a capital letter to match case exactly.
+            </Item>
+            <Item name="Sort">
+              Rank by <em>Time</em> (total seconds, the default) or <em>Count</em>{" "}
+              (number of hangs). Time favours long hangs; Count favours frequent
+              ones.
+            </Item>
+            <Item name="Trend">
+              Show only regressions, improvements, or new hangs.
+            </Item>
+            <Item name="Time (s) and Count">
+              Seconds of hanging and number of hangs for that signature on this
+              build. Hover a time to see its share of the total.
+            </Item>
+            <Item name="Trend column">
+              How the last 7 days compare with the 7 before. See{" "}
+              <button className="link" onClick={() => scrollTo("trends")}>
+                How trends are worked out
+              </button>
+              .
+            </Item>
+            <Item name="Hang signature">
+              The <b>leaf frame</b>: the function the thread was in when it hung,
+              and its library. If a bug already covers the hang, the row shows the
+              bug number and summary instead.
+            </Item>
+          </dl>
+          <p className="guide-note">
+            The list shows 50 rows at a time. Use <em>Show 50 more</em> at the
+            bottom to see more.
+          </p>
+        </Section>
+
         <Section id="overview-page">
           <p>
             <Link to={overview}>Overview</Link> is the health summary for one
@@ -334,49 +378,6 @@ export function Guide() {
               The share of hangs from Windows, macOS, Linux and other systems.
             </Item>
           </dl>
-        </Section>
-
-        <Section id="top-hangs-page">
-          <p>
-            <Link to={topHangs}>Top Hangs</Link> is the full list of signatures on
-            the left, with the selected hang's details on the right.
-          </p>
-          <dl className="guide-list">
-            <Item name="Filter box">
-              Type part of a function or library name, for example{" "}
-              <code>nsFrame</code> or <code>xul.dll</code>, to keep only the hangs
-              whose stack contains it. Matches are highlighted. All-lowercase text
-              matches any case; include a capital letter to match case exactly.
-            </Item>
-            <Item name="Sort">
-              Rank by <em>Time</em> (total seconds, the default) or <em>Count</em>{" "}
-              (number of hangs). Time favours long hangs; Count favours frequent
-              ones.
-            </Item>
-            <Item name="Trend">
-              Show only regressions, improvements, or new hangs.
-            </Item>
-            <Item name="Time (s) and Count">
-              Seconds of hanging and number of hangs for that signature on this
-              build. Hover a time to see its share of the total.
-            </Item>
-            <Item name="Trend column">
-              How the last 7 days compare with the 7 before. See{" "}
-              <button className="link" onClick={() => scrollTo("trends")}>
-                How trends are worked out
-              </button>
-              .
-            </Item>
-            <Item name="Hang signature">
-              The <b>leaf frame</b>: the function the thread was in when it hung,
-              and its library. If a bug already covers the hang, the row shows the
-              bug number and summary instead.
-            </Item>
-          </dl>
-          <p className="guide-note">
-            The list shows 50 rows at a time. Use <em>Show 50 more</em> at the
-            bottom to see more.
-          </p>
         </Section>
 
         <Section id="hang-detail">
