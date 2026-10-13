@@ -428,9 +428,17 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
         // A chart too wide for its box opens scrolled to the newest days, so
         // the axis goes on that side to stay in view.
         position: minWidth ? "right" : "left",
-        title: {
-          display: true,
-          text: metric === "ms" ? "hang ms" : "hang count",
+        // The chart is kept short (it's for the shape of the trend and the
+        // volume, not reading values off), so: a few ticks, in compact form
+        // ("16M"), and no axis title; the ms/count toggle names the unit and the
+        // tooltip gives exact values.
+        ticks: {
+          maxTicksLimit: 3,
+          callback: (value) =>
+            Number(value).toLocaleString(undefined, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
         },
       },
     },

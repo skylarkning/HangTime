@@ -150,7 +150,8 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
 }
 .ts-toggle button.active { background: var(--blue); color: #fff; }
 .ts-toggle.range button + button { border-left: 1px solid var(--border); }
-.ts-chart { height: 220px; }
+/* Short on purpose: the history is for spotting trend and volume at a glance. */
+.ts-chart { height: 120px; }
 
 /* Chart range controls and drag-to-zoom */
 .chart-tools { display: flex; align-items: center; gap: 10px; }
@@ -202,7 +203,7 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
 }
 .ts-legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.ts-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
+.ts-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
 .chip {
   font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
   white-space: nowrap; background: var(--surface-alt); color: var(--muted);
