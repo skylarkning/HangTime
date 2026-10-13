@@ -402,9 +402,11 @@ export function Guide() {
             <Item name="Near-duplicate group">
               Hangs that are really the same problem but look different at the very
               top of the stack (one stuck in a lock, another in <code>memcpy</code>
-              ) are grouped by their first meaningful Firefox frame. Open the group
-              to see its variants, list every stack, or tick two and compare them
-              side by side.
+              ) are grouped by their first meaningful Firefox frame.{" "}
+              <em>Show … stacks in the list</em> narrows the hang list on the left
+              to that group; <em>Show all hangs</em> in the banner above the list
+              goes back. <em>Compare stacks</em> lists the group's variants here,
+              so you can tick two and compare them side by side.
             </Item>
             <Item name="File a bug">
               Opens a new Bugzilla bug with the summary, stack, numbers and{" "}

@@ -7,16 +7,17 @@
 import type { Frame, HangSignature, ProcessedProfile } from "./types";
 
 /**
- * Filter signatures whose representative stack contains a frame whose function
- * or library name matches `filter`. The match is case-insensitive when the
- * filter is entirely lower-case (mirrors fqueze/hang-stats).
+ * A test for whether a stack (funcTable indices) contains a frame whose
+ * function or library name matches `filter`, or null when there's no filter.
+ * The match is case-insensitive when the filter is entirely lower-case
+ * (mirrors fqueze/hang-stats).
  */
-export function filterSignatures(
+export function stackMatcher(
   profile: ProcessedProfile,
   filter: string,
-): HangSignature[] {
+): ((frameKeys: number[]) => boolean) | null {
   if (!filter) {
-    return profile.signatures;
+    return null;
   }
   const caseInsensitive = filter.toLowerCase() === filter;
   const matches = (value: string) =>
@@ -28,9 +29,16 @@ export function filterSignatures(
       matchingFuncs.add(f);
     }
   }
-  return profile.signatures.filter((sig) =>
-    sig.frameKeys.some((fk) => matchingFuncs.has(fk)),
-  );
+  return (frameKeys) => frameKeys.some((fk) => matchingFuncs.has(fk));
+}
+
+/** Signatures whose representative stack matches `filter` (see stackMatcher). */
+export function filterSignatures(
+  profile: ProcessedProfile,
+  filter: string,
+): HangSignature[] {
+  const match = stackMatcher(profile, filter);
+  return match ? profile.signatures.filter((sig) => match(sig.frameKeys)) : profile.signatures;
 }
 
 /** Resolve a signature's frame indices to displayable frames (leaf -> root). */
