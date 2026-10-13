@@ -10,6 +10,7 @@ import { formatCount, formatSeconds } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
 import { memberStacks } from "@/processing/signatureKey";
 import { LoadingProgress } from "@/components/LoadingProgress";
+import { BuildBar } from "@/components/BuildBar";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -61,19 +62,28 @@ export function Explorer() {
 
   if (query.isError) {
     return (
-      <div className="state-msg error">
-        Failed to load data: {(query.error as Error).message}
+      <div className="view-state">
+        <BuildBar />
+        <div className="state-msg error">
+          Failed to load data: {(query.error as Error).message}
+        </div>
       </div>
     );
   }
   if (!query.data) {
-    return <LoadingProgress thread={state.thread} date={state.date} />;
+    return (
+      <div className="view-state">
+        <BuildBar />
+        <LoadingProgress thread={state.thread} date={state.date} />
+      </div>
+    );
   }
   const profile = query.data;
 
   return (
     <div className="explorer">
       <div className="list-pane">
+        <BuildBar date={profile.date} />
         {bugs.isError && (
           <div className="banner warn">
             Couldn’t load the Bugzilla bug list — hangs are not merged by bug.{" "}

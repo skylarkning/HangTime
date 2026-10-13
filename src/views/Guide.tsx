@@ -530,11 +530,22 @@ export function Guide() {
 
         <Section id="builds">
           <p>
-            The <span className="pill">Build …</span> button in the top right shows
-            which Nightly build you're looking at. Click it and pick a date to see
+            <b>Build date</b>, at the top of Top Hangs and Overview, shows which
+            Nightly build you're looking at. Click the date and pick another to see
             an older build. <em>Back to latest build</em> returns to the newest one.
             A build only exists once the daily job has processed it, about four days
             after it shipped.
+          </p>
+          <p>
+            Hang reports can be grouped by <b>build date</b> or by{" "}
+            <b>submission date</b>. A build date (the first eight digits of the build
+            ID) is the day a Nightly was built, so it identifies the exact code users
+            ran. A submission date is the day a report reached Mozilla, and one day's
+            reports come from many builds. HangTime groups by build date: each build,
+            and each day on the charts, is one Nightly build's hangs, so a change can
+            be traced to the code that caused it. A build's reports keep arriving for
+            days after it ships; those received up to five days after the build date
+            are counted.
           </p>
           <p>
             Everything you set (build, filter, sort, trend and selected hang) is

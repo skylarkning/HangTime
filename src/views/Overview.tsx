@@ -28,6 +28,7 @@ import { ChartRangeControls, useChartRange, useDragZoom } from "@/components/Cha
 import { InfoTip } from "@/components/InfoTip";
 import { memberStacks } from "@/processing/signatureKey";
 import { LoadingProgress } from "@/components/LoadingProgress";
+import { BuildBar } from "@/components/BuildBar";
 
 // Platform identity colors (Okabe-Ito; CVD-validated). Direct-labeled on the
 // bar, so identity never rests on color alone.
@@ -61,18 +62,27 @@ export function Overview() {
 
   if (query.isError) {
     return (
-      <div className="state-msg error">
-        Failed to load data: {(query.error as Error).message}
+      <div className="view-state">
+        <BuildBar />
+        <div className="state-msg error">
+          Failed to load data: {(query.error as Error).message}
+        </div>
       </div>
     );
   }
   if (!query.data) {
-    return <LoadingProgress thread={state.thread} date={state.date} />;
+    return (
+      <div className="view-state">
+        <BuildBar />
+        <LoadingProgress thread={state.thread} date={state.date} />
+      </div>
+    );
   }
   const profile = query.data;
 
   return (
     <div className="overview">
+      <BuildBar date={profile.date} />
       <KpiRow profile={profile} index={index} />
       <VolumeCard index={index} />
       <div className="ov-grid">
