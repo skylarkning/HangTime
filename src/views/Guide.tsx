@@ -277,13 +277,14 @@ export function Guide() {
               details on the right.
             </li>
             <li>
-              <b>Read its history.</b> The <em>History</em> chart shows the hang day
-              by day. Tick <em>Fx releases</em> to see whether a jump lines up with
-              a Firefox release, Beta or Nightly milestone.
+              <b>Find the cause.</b> The <em>Stack</em> is at the top of the
+              details. Frame 0 is where the thread was stuck; the frames below it
+              show how it got there.
             </li>
             <li>
-              <b>Find the cause.</b> Scroll to <em>Stack</em>. Frame 0 is where the
-              thread was stuck; the frames below it show how it got there.
+              <b>Read its history.</b> Below the stack, the <em>History</em> chart
+              shows the hang day by day. Tick <em>Fx releases</em> to see whether a
+              jump lines up with a Firefox release, Beta or Nightly milestone.
             </li>
             <li>
               <b>Act on it.</b> If there's no bug yet, use <em>File a bug</em>. It
@@ -388,6 +389,12 @@ export function Guide() {
             <Item name="Bugzilla">
               Shown when the hang is tracked by a bug, with a link to it.
             </Item>
+            <Item name="Stack">
+              Every frame, starting at frame 0, where the thread was stuck, and
+              ending at the outermost caller. Firefox's own code is in normal text;
+              operating system and third-party libraries are dimmed, so the Firefox
+              frames stand out.
+            </Item>
             <Item name="History">
               The hang's daily time or count across the window, with its peak day
               marked. For a bug that covers several stacks, grey dashed lines show
@@ -431,12 +438,6 @@ export function Guide() {
                 Hang annotations
               </button>{" "}
               for the full list.
-            </Item>
-            <Item name="Stack">
-              Every frame, starting at frame 0, where the thread was stuck, and
-              ending at the outermost caller. Firefox's own code is in normal text;
-              operating system and third-party libraries are dimmed, so the Firefox
-              frames stand out.
             </Item>
           </dl>
         </Section>

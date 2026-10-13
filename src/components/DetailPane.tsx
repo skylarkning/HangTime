@@ -73,6 +73,28 @@ export function DetailPane({
         </div>
       )}
 
+      {/* The stack first: it says what the hang is, and everything below is
+          about how often and where it happens. */}
+      <div className="detail-section">
+        <h3>Stack ({frames.length} frames)</h3>
+        <div className="stack-trace">
+          {frames.length === 0 && <div className="frame">(empty stack)</div>}
+          {frames.map((frame, i) => (
+            <div key={i} className={`frame${isOwnCode(frame) ? "" : " system"}`}>
+              <span className="idx">{i}</span>
+              <span className="name">
+                <Highlight text={frame.funcName} needle={filter} />
+              </span>
+              {frame.libName && (
+                <span className="lib">
+                  <Highlight text={frame.libName} needle={filter} />
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <TimeseriesChart index={timeseries} signature={signature} />
 
       <LeafGroupSection
@@ -99,25 +121,6 @@ export function DetailPane({
 
       <AnnotationStatsSection signature={signature} />
 
-      <div className="detail-section">
-        <h3>Stack ({frames.length} frames)</h3>
-        <div className="stack-trace">
-          {frames.length === 0 && <div className="frame">(empty stack)</div>}
-          {frames.map((frame, i) => (
-            <div key={i} className={`frame${isOwnCode(frame) ? "" : " system"}`}>
-              <span className="idx">{i}</span>
-              <span className="name">
-                <Highlight text={frame.funcName} needle={filter} />
-              </span>
-              {frame.libName && (
-                <span className="lib">
-                  <Highlight text={frame.libName} needle={filter} />
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
