@@ -24,6 +24,8 @@ export interface ViewState {
   sort: SortKey;
   /** Restrict the list to a trend bucket, or show all. */
   trend: TrendFilter;
+  /** Restrict the list to one near-duplicate group (its group key), or null. */
+  group: string | null;
 }
 
 export function useViewState() {
@@ -36,6 +38,7 @@ export function useViewState() {
     selected: params.get("selected"),
     sort: (params.get("sort") as SortKey) || "time",
     trend: (params.get("trend") as TrendFilter) || "all",
+    group: params.get("group"),
   };
 
   const update = useCallback(

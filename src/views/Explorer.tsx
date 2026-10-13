@@ -6,6 +6,7 @@ import { computeTrend, trendCategory, type TrendSummary } from "@/data/trend";
 import type { Metric } from "@/data/timeseries";
 import { HangTable } from "@/components/HangTable";
 import { DetailPane } from "@/components/DetailPane";
+import { GroupMemberTable } from "@/components/GroupMemberTable";
 import { formatCount, formatSeconds } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
 import { memberStacks } from "@/processing/signatureKey";
@@ -32,6 +33,10 @@ export function Explorer() {
     }
     return map;
   }, [query.data, timeseries.data, metric]);
+
+  // The near-duplicate group the list is narrowed to, if any. The list then
+  // shows the group's stacks one by one (GroupMemberTable) instead of rows.
+  const group = state.group ? query.data?.groupsByKey?.[state.group] : undefined;
 
   const filtered = useMemo(() => {
     if (!query.data) {
@@ -82,6 +87,26 @@ export function Explorer() {
             </button>
           </div>
         )}
+        {state.group && (
+          <div className="group-banner">
+            {group ? (
+              <>
+                <span className="group-banner-label">Near-duplicate group</span>
+                <span className="group-banner-name" title={group.displayName}>
+                  {group.displayName}
+                </span>
+                <span className="group-badge">
+                  {group.memberCount.toLocaleString()} stacks
+                </span>
+              </>
+            ) : (
+              <span>That near-duplicate group isn’t in this build.</span>
+            )}
+            <button className="btn secondary" onClick={() => update({ group: null })}>
+              Show all hangs
+            </button>
+          </div>
+        )}
         <div className="filter-bar">
           <input
             type="text"
@@ -103,15 +128,17 @@ export function Explorer() {
           <label
             className="control"
             title={
-              timeseries.data
-                ? undefined
-                : "Trend filtering needs the timeseries artifact"
+              group
+                ? "Trends are per hang row, not per stack, so they don't apply to a group's stacks"
+                : timeseries.data
+                  ? undefined
+                  : "Trend filtering needs the timeseries artifact"
             }
           >
             Trend
             <select
-              value={state.trend}
-              disabled={!timeseries.data}
+              value={group ? "all" : state.trend}
+              disabled={!timeseries.data || !!group}
               onChange={(e) =>
                 update({ trend: e.target.value as typeof state.trend })
               }
@@ -122,21 +149,40 @@ export function Explorer() {
               <option value="new">New</option>
             </select>
           </label>
-          <span className="summary">
-            <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
-            <strong>{formatSeconds(profile.totalDuration)}</strong> s ·{" "}
-            <strong>{formatCount(profile.totalCount)}</strong> hangs
-          </span>
+          {group ? (
+            <span className="summary">
+              <strong>{group.memberCount.toLocaleString()}</strong> stacks ·{" "}
+              <strong>{formatSeconds(group.totalMs)}</strong> s ·{" "}
+              <strong>{formatCount(group.totalCount)}</strong> hangs
+            </span>
+          ) : (
+            <span className="summary">
+              <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
+              <strong>{formatSeconds(profile.totalDuration)}</strong> s ·{" "}
+              <strong>{formatCount(profile.totalCount)}</strong> hangs
+            </span>
+          )}
         </div>
         <div className="table-scroll">
-          <HangTable
-            profile={profile}
-            signatures={filtered}
-            filter={state.filter}
-            selectedId={state.selected}
-            onSelect={(id) => update({ selected: id })}
-            trendById={trendById}
-          />
+          {group ? (
+            <GroupMemberTable
+              profile={profile}
+              group={group}
+              filter={state.filter}
+              sort={metric === "count" ? "count" : "time"}
+              selectedId={state.selected}
+              onSelect={(id) => update({ selected: id })}
+            />
+          ) : (
+            <HangTable
+              profile={profile}
+              signatures={filtered}
+              filter={state.filter}
+              selectedId={state.selected}
+              onSelect={(id) => update({ selected: id })}
+              trendById={trendById}
+            />
+          )}
         </div>
       </div>
       <DetailPane
@@ -145,6 +191,8 @@ export function Explorer() {
         filter={state.filter}
         timeseries={timeseries.data}
         onSelect={(id) => update({ selected: id })}
+        activeGroup={state.group}
+        onShowGroup={(key) => update({ group: key })}
       />
     </div>
   );

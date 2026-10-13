@@ -31,6 +31,10 @@ interface DetailPaneProps {
   filter: string;
   timeseries: TimeseriesIndex | undefined;
   onSelect: (id: string) => void;
+  /** The near-duplicate group the list is narrowed to, if any. */
+  activeGroup: string | null;
+  /** Narrow the list to a near-duplicate group, or back to every hang (null). */
+  onShowGroup: (groupKey: string | null) => void;
 }
 
 export function DetailPane({
@@ -39,6 +43,8 @@ export function DetailPane({
   filter,
   timeseries,
   onSelect,
+  activeGroup,
+  onShowGroup,
 }: DetailPaneProps) {
   // A newly selected hang starts at the top of its details, not wherever the
   // previous one had been scrolled to.
@@ -109,6 +115,8 @@ export function DetailPane({
         signature={signature}
         filter={filter}
         onSelect={onSelect}
+        activeGroup={activeGroup}
+        onShowGroup={onShowGroup}
       />
 
       <FileBugSection
@@ -339,11 +347,15 @@ function LeafGroupSection({
   signature,
   filter,
   onSelect,
+  activeGroup,
+  onShowGroup,
 }: {
   profile: ProcessedProfile;
   signature: HangSignature;
   filter: string;
   onSelect: (id: string) => void;
+  activeGroup: string | null;
+  onShowGroup: (groupKey: string | null) => void;
 }) {
   const info = profile.leafGroupByKey?.[signature.stackKey];
   const groupKey = info?.groupKey;
@@ -491,18 +503,14 @@ function LeafGroupSection({
           frame: system code, lock / allocator primitives, SpiderMonkey glue, and
           event-loop machinery are skipped so a pile of hangs that are really the
           same Firefox problem collapse together even when the raw leaf (a sleep,
-          a <code>memcpy</code>, a <code>free</code>) differs. The whole group is
-          one row in the list; open it here to see the distinct variants (each
-          labeled by its branch frame), show every individual stack, or tick two
-          and diff them to confirm the merge is right.
+          a <code>memcpy</code>, a <code>free</code>) differs. <b>Show in the
+          list</b> narrows the hang list on the left to the group&rsquo;s stacks.{" "}
+          <b>Compare stacks</b> opens the distinct variants (each labeled by its
+          branch frame) here, so you can tick two and diff them to confirm the
+          merge is right.
         </InfoTip>
       </h3>
-      <button
-        className="group-toggle"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <span className={`disclosure ${open ? "open" : ""}`}>▸</span>
+      <div className="group-head">
         <span className="group-toggle-name">
           <Highlight text={group.displayName} needle={filter} />
         </span>
@@ -515,7 +523,21 @@ function LeafGroupSection({
             ~{group.avgEventLoopDepth.toFixed(1)} event loops
           </span>
         )}
-      </button>
+      </div>
+      <div className="group-actions">
+        {activeGroup === groupKey ? (
+          <button className="btn secondary" onClick={() => onShowGroup(null)}>
+            Show all hangs in the list
+          </button>
+        ) : (
+          <button className="btn" onClick={() => onShowGroup(groupKey ?? null)}>
+            Show {group.memberCount.toLocaleString()} stacks in the list ←
+          </button>
+        )}
+        <button className="link" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? "Hide stack comparison" : "Compare stacks"}
+        </button>
+      </div>
       {open && (
         <>
           {singleVariant ? (
