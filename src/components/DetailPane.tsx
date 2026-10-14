@@ -114,7 +114,7 @@ export function DetailPane({
 
   // The bug comment states the trend with its dates and coverage, so whoever
   // reads it can judge the claim without opening the dashboard.
-  const series = timeseries?.resolveByStack(memberStacks(signature));
+  const series = timeseries?.resolveSignature(signature);
   const trendNote = series
     ? trendSentence(computeTrend(series, "ms", { endDate: profile.date }))
     : undefined;
@@ -1454,7 +1454,7 @@ function AffectedClientsSection({
   timeseries: TimeseriesIndex | undefined;
 }) {
   const [picked, setPicked] = useState<AffectedWindowKey>("build");
-  const resolved = timeseries?.resolveAffectedByStack(memberStacks(signature)) ?? null;
+  const resolved = timeseries?.resolveAffectedSignature(signature) ?? null;
 
   // Only measured counts are shown: the build's come from a --client-metrics
   // run, the windows from a timeseries rolled up from such runs. Anything
@@ -1578,7 +1578,7 @@ function WindowAffected({
   resolved,
   windowKey,
 }: {
-  resolved: ReturnType<TimeseriesIndex["resolveAffected"]>;
+  resolved: ReturnType<TimeseriesIndex["resolveAffectedSignature"]>;
   windowKey: "d7" | "d28" | "d365";
 }) {
   const win = resolved?.windows.find((w) => w.key === windowKey);

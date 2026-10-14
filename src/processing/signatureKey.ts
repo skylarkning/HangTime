@@ -104,6 +104,62 @@ export function stableStackId(frameKeys: number[], hashes: FrameHashes): string 
 }
 
 /**
+ * A frame name without the parts the compiler or an edit renumbers from one
+ * build to the next while the code path stays the same: MSVC and Itanium
+ * lambda numbers (`<lambda_7>` vs `<lambda_5>`), the line and column in
+ * clang's "lambda at file:line:col", Rust closure and impl numbers, and a JS
+ * frame's line number (`write SessionWriter.sys.mjs:137` vs `:167`).
+ */
+export function shapeName(funcName: string, libName: string): string {
+  let name = funcName
+    .replace(/<lambda_[0-9a-f]+>/g, "<lambda>")
+    .replace(/\{lambda\([^)]*\)#\d+\}/g, "{lambda}")
+    .replace(/(lambda at [^'>]*?):\d+:\d+/g, "$1")
+    .replace(/\b(impl|closure)\$\d+/g, "$1$")
+    .replace(/\{closure#\d+\}/g, "{closure}");
+  if (!libName) {
+    name = name.replace(/:\d+(:\d+)?$/, "");
+  }
+  return name;
+}
+
+/**
+ * A stack's shape: its canonical key with `shapeName` applied to every frame.
+ * Not an identity (that stays `canonicalKey`, shared with the Python side);
+ * it groups the stacks one code path produced across builds, so a hang's
+ * history survives a renamed lambda or an edited JS file.
+ */
+export function shapeKey(frameKeys: number[], funcNames: string[], libNames: string[]): string {
+  return frameKeys
+    .map((fk) => `${shapeName(funcNames[fk], libNames[fk])}${FIELD_SEP}${libNames[fk]}`)
+    .join(FRAME_SEP);
+}
+
+/** `shapeKey` for a timeseries signature's `[funcName, libName]` frames. */
+export function shapeKeyFromFrames(frames: [string, string][]): string {
+  return frames.map(([name, lib]) => `${shapeName(name, lib)}${FIELD_SEP}${lib}`).join(FRAME_SEP);
+}
+
+/**
+ * The stacks a signature covers with each one's hang ms and count on the
+ * build: its own, or every stack folded into it when it is a bug-merged row.
+ */
+export function memberStackTotals(signature: {
+  stackKey: string;
+  duration: number;
+  count: number;
+  memberStackKeys?: string[];
+  memberStackMs?: number[];
+  memberStackCounts?: number[];
+}): { key: string; ms: number; count: number }[] {
+  const { memberStackKeys: keys, memberStackMs: ms, memberStackCounts: counts } = signature;
+  if (!keys) {
+    return [{ key: signature.stackKey, ms: signature.duration, count: signature.count }];
+  }
+  return keys.map((key, i) => ({ key, ms: ms?.[i] ?? 0, count: counts?.[i] ?? 0 }));
+}
+
+/**
  * The stack keys a signature covers: its own, or every stack folded into it
  * when it is a bug-merged row.
  */

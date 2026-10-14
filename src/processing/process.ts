@@ -34,6 +34,12 @@ import type {
 /** Maps a bug `[bhr:...]` signature substring to its bug. */
 export type BugMap = Map<string, KnownBug>;
 
+/** One distinct stack's hang time and count on the build. */
+interface StackTotals {
+  ms: number;
+  count: number;
+}
+
 /** Placeholder until a signature's final stack is classified. */
 const UNCLASSIFIED: HangKind = {
   mechanism: "unknown",
@@ -209,19 +215,24 @@ export function buildSignatures(
   // and samples repeat stacks heavily -- 342k samples over 190k distinct stacks
   // on a production day, so 44% of that work is redundant. The job interns the
   // stackTable, so a node id identifies a frame sequence exactly; memoize on it.
-  const framesByNode = new Map<number, { frameKeys: number[]; stackKey: string }>();
+  // Each distinct stack also keeps its own totals, so a bug row can say how
+  // much of it each member stack holds (the history covers some members only).
+  const framesByNode = new Map<number, StackTotals & { frameKeys: number[]; stackKey: string }>();
+  const membersOf = new Map<HangSignature, StackTotals[]>();
 
   for (let i = 0; i < sampleCount; i++) {
     const stackNode = sampleStack[i];
     let resolved = framesByNode.get(stackNode);
     if (resolved === undefined) {
       const frames = reconstructStack(thread, i);
-      resolved = { frameKeys: frames, stackKey: frames.join(",") };
+      resolved = { frameKeys: frames, stackKey: frames.join(","), ms: 0, count: 0 };
       framesByNode.set(stackNode, resolved);
     }
     const { frameKeys, stackKey } = resolved;
     const duration = Math.round(sampleHangMs[i]);
     const count = Math.round(sampleHangCount[i]);
+    resolved.ms += duration;
+    resolved.count += count;
     const annotations = readAnnotations(thread, i);
     const platform = readPlatform(thread, i);
 
@@ -257,6 +268,7 @@ export function buildSignatures(
         addCount(bugHang.platformMs, platform, duration);
         // Distinct stack folded into the bug — record it as a member series.
         (bugHang.memberStackKeys ??= [bugHang.stackKey]).push(stackKey);
+        membersOf.get(bugHang)?.push(resolved);
         bySignature.set(stackKey, bugHang);
         continue;
       }
@@ -283,6 +295,14 @@ export function buildSignatures(
     bySignature.set(stackKey, sig);
     if (bug) {
       byBug.set(bug.id, sig);
+      membersOf.set(sig, [resolved]);
+    }
+  }
+
+  for (const [sig, members] of membersOf) {
+    if (sig.memberStackKeys) {
+      sig.memberStackMs = members.map((m) => m.ms);
+      sig.memberStackCounts = members.map((m) => m.count);
     }
   }
 

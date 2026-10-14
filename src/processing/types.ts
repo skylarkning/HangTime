@@ -128,6 +128,9 @@ export interface HangSignature {
    * total and breaks out the top individual stacks.
    */
   memberStackKeys?: string[];
+  /** Each member stack's own hang ms and count, parallel to memberStackKeys. */
+  memberStackMs?: number[];
+  memberStackCounts?: number[];
   annotationStats: AnnotationStats;
   /** Per-signature OS histogram (platform string -> summed hang count). */
   platformStats: Record<string, number>;
