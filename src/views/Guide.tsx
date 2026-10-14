@@ -457,8 +457,16 @@ export function Guide() {
               <span className="guide-swatch" style={{ color: "#d76e00" }}>Release</span>,{" "}
               <span className="guide-swatch" style={{ color: "#0250bb" }}>Beta</span>{" "}
               and <span className="guide-swatch" style={{ color: "#058b00" }}>Nightly</span>.
-              If a hang isn't among the top tracked signatures, there's no history
-              to show.
+              The history keeps only the top few hundred stacks over the window, and
+              matches them to the build on screen by the shape of each stack: names
+              a build changes without changing the code path (a renumbered lambda, a
+              moved line in a JS file) are ignored, so a hang keeps its history from
+              one build to the next. A note under the chips says when the history
+              follows only part of a hang (a bug folds in many stacks, and only the
+              tracked ones are counted on every day), and when the build on
+              screen&rsquo;s own bar came from its own data because the history
+              hasn&rsquo;t recorded its renamed stacks yet. A hang none of whose
+              stacks is tracked has no history.
             </Item>
             <Item name="Near-duplicate group">
               Hangs that are really the same problem but look different at the very

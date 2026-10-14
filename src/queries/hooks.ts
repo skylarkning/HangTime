@@ -33,7 +33,6 @@ import type { Profile } from "@/data/schema";
 import type { ProcessedProfile } from "@/processing/types";
 import { computeTrend, type TrendSummary } from "@/data/trend";
 import type { Metric } from "@/data/timeseries";
-import { memberStacks } from "@/processing/signatureKey";
 
 const EMPTY_BUGS: BugMap = new Map();
 const BUGS_STALE_MS = 60 * 60 * 1000; // bugs change slowly
@@ -195,7 +194,7 @@ export function useTrendById(
     index?.bind(profile);
     const endDate = profile.date;
     for (const sig of profile.signatures) {
-      const series = index?.resolveByStack(memberStacks(sig));
+      const series = index?.resolveSignature(sig);
       map.set(sig.id, series ? computeTrend(series, metric, { endDate }) : null);
     }
     return map;
