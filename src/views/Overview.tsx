@@ -1,7 +1,8 @@
 /**
  * System-health overview for engineering managers: a few headline numbers, the
- * hang-volume trend over the rolling window, what needs attention (regressions
- * and newly appeared hangs), the worst offenders, and where hangs land by OS.
+ * hang-volume trend over the rolling window, what needs attention (credible
+ * increases and newly tracked hangs), the worst offenders, and where hangs land
+ * by OS.
  *
  * It reads the same two artifacts the explorer does — the current daily profile
  * and the timeseries window — and derives everything else. Every offender row
@@ -16,6 +17,7 @@ import {
   computeTrend,
   trendBadge,
   trendCategory,
+  trendEvidence,
   type TrendCategory,
   type TrendSummary,
 } from "@/data/trend";
@@ -54,9 +56,10 @@ export function Overview() {
       return map;
     }
     index?.bind(query.data);
+    const endDate = query.data.date;
     for (const sig of query.data.signatures) {
       const series = index?.resolveByStack(memberStacks(sig)) ?? null;
-      map.set(sig.id, series ? computeTrend(series, "ms") : null);
+      map.set(sig.id, series ? computeTrend(series, "ms", { endDate }) : null);
     }
     return map;
   }, [query.data, index]);
@@ -116,17 +119,32 @@ function TrendChip({ trend }: { trend: TrendSummary | null | undefined }) {
   }
   const badge = trendBadge(trend);
   const text =
-    badge.text === "stable" || badge.text === "new"
-      ? badge.text
-      : `${badge.text} vs prior 7d`;
-  return <span className={`chip ${badge.tone}`}>{text}</span>;
+    trend.state === "increase" || trend.state === "decrease"
+      ? `${badge.text} vs prior 7d`
+      : badge.text;
+  return (
+    <span className={`chip ${badge.tone}`} title={trendEvidence(trend)}>
+      {text}
+    </span>
+  );
 }
 
 // -- Headline numbers --------------------------------------------------------
 
+/**
+ * The tracked volume as one series. Days with no data for any signature stay
+ * null, so the trend reads them as missing rather than as a day without hangs.
+ */
 function windowSeries(index: TimeseriesIndex): ResolvedSeries {
   const totals = index.totals();
-  return { dates: index.dates, total: totals, members: [] };
+  const known = (values: number[]) =>
+    values.map((value, i) => (index.dayHasData[i] ? value : null));
+  return {
+    dates: index.dates,
+    total: { ms: known(totals.ms), count: known(totals.count) },
+    dayHasData: index.dayHasData,
+    members: [],
+  };
 }
 
 function KpiRow({
@@ -137,8 +155,9 @@ function KpiRow({
   index: TimeseriesIndex | undefined;
 }) {
   const series = index ? windowSeries(index) : null;
-  const msTrend = series ? computeTrend(series, "ms") : null;
-  const countTrend = series ? computeTrend(series, "count") : null;
+  const endDate = profile.date;
+  const msTrend = series ? computeTrend(series, "ms", { endDate }) : null;
+  const countTrend = series ? computeTrend(series, "count", { endDate }) : null;
 
   // Bug coverage: share of hang time whose signature is tracked by a bug.
   let trackedMs = 0;
@@ -357,10 +376,10 @@ function AttentionCard({
 }) {
   const buckets = useMemo(() => {
     const byCat: Record<TrendCategory, { sig: HangSignature; trend: TrendSummary }[]> = {
-      regression: [],
+      increase: [],
       new: [],
-      improvement: [],
-      stable: [],
+      decrease: [],
+      other: [],
     };
     for (const sig of profile.signatures) {
       const trend = trendById.get(sig.id);
@@ -369,9 +388,10 @@ function AttentionCard({
       }
       byCat[trendCategory(trend)].push({ sig, trend });
     }
-    for (const cat of Object.keys(byCat) as TrendCategory[]) {
-      byCat[cat].sort((a, b) => b.trend.recentAvg - a.trend.recentAvg);
-    }
+    // Increases by what they added per day; newly tracked hangs by their
+    // recent volume, as they have no baseline to subtract.
+    byCat.increase.sort((a, b) => (b.trend.deltaPerDay ?? 0) - (a.trend.deltaPerDay ?? 0));
+    byCat.new.sort((a, b) => (b.trend.recent.avg ?? 0) - (a.trend.recent.avg ?? 0));
     return byCat;
   }, [profile.signatures, trendById]);
 
@@ -383,9 +403,10 @@ function AttentionCard({
         <h2>
           Needs attention
           <InfoTip label="Needs attention">
-            Signatures whose recent 7-day average rose sharply (regressions) or
-            that appeared after a near-zero baseline (new), ranked by recent
-            volume. These are the hangs most likely worth triaging first.
+            Signatures whose 7-day average rose, with enough days and hangs in
+            both weeks to back it (increases, ranked by the time they added per
+            day), or that are newly tracked after an absent baseline, ranked by
+            recent volume. These are the hangs most likely worth triaging first.
           </InfoTip>
         </h2>
       </div>
@@ -394,14 +415,14 @@ function AttentionCard({
       ) : (
         <>
           <AttentionGroup
-            title="Regressions"
+            title="Increases"
             tone="red"
-            items={buckets.regression}
+            items={buckets.increase}
             profile={profile}
             state={state}
           />
           <AttentionGroup
-            title="New"
+            title="Newly tracked"
             tone="blue"
             items={buckets.new}
             profile={profile}

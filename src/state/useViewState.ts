@@ -11,7 +11,26 @@ import { isPlatform, type Platform } from "@/data/platforms";
 /** Metric the hang list is ranked by. */
 export type SortKey = "time" | "count";
 /** Trend bucket the hang list is filtered to. */
-export type TrendFilter = "all" | "regression" | "improvement" | "new";
+export type TrendFilter = "all" | "increase" | "decrease" | "new";
+
+/**
+ * Read the `trend` param. Links from before the rename say `regression` and
+ * `improvement`; they still open the bucket they meant.
+ */
+function parseTrend(value: string | null): TrendFilter {
+  switch (value) {
+    case "increase":
+    case "regression":
+      return "increase";
+    case "decrease":
+    case "improvement":
+      return "decrease";
+    case "new":
+      return "new";
+    default:
+      return "all";
+  }
+}
 
 export interface ViewState {
   thread: ThreadKind;
@@ -40,7 +59,7 @@ export function useViewState() {
     filter: params.get("filter") || "",
     selected: params.get("selected"),
     sort: (params.get("sort") as SortKey) || "time",
-    trend: (params.get("trend") as TrendFilter) || "all",
+    trend: parseTrend(params.get("trend")),
     platform: isPlatform(params.get("platform")) ? (params.get("platform") as Platform) : null,
     group: params.get("group"),
   };

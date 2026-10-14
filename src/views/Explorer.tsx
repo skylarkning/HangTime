@@ -30,9 +30,12 @@ export function Explorer() {
     }
     const index = timeseries.data;
     index?.bind(query.data);
+    // Compare as of the build on screen, so an older build's trends describe
+    // that build rather than the latest days of the window.
+    const endDate = query.data.date;
     for (const sig of query.data.signatures) {
       const series = index?.resolveByStack(memberStacks(sig));
-      map.set(sig.id, series ? computeTrend(series, metric) : null);
+      map.set(sig.id, series ? computeTrend(series, metric, { endDate }) : null);
     }
     return map;
   }, [query.data, timeseries.data, metric]);
@@ -86,6 +89,12 @@ export function Explorer() {
         const t = trendById.get(s.id);
         return t != null && trendCategory(t) === state.trend;
       });
+    }
+    if (state.trend === "increase") {
+      // A big rise on a hang that barely registers matters less than a modest
+      // one on a heavy hang, so credible increases rank by what they added.
+      const added = (s: HangSignature) => trendById.get(s.id)?.deltaPerDay ?? 0;
+      return [...sigs].sort((a, b) => added(b) - added(a));
     }
     const value = metric === "count" ? countOf : durationOf;
     return [...sigs].sort((a, b) => value(b) - value(a));
@@ -201,7 +210,7 @@ export function Explorer() {
                   ? "Trend filtering needs the timeseries artifact"
                   : platform
                     ? "Trends are worked out across all platforms"
-                    : undefined
+                    : "Increases and decreases count only when both weeks have enough data behind them"
             }
           >
             Trend
@@ -213,9 +222,9 @@ export function Explorer() {
               }
             >
               <option value="all">All</option>
-              <option value="regression">Regressions</option>
-              <option value="improvement">Improvements</option>
-              <option value="new">New</option>
+              <option value="increase">Increases</option>
+              <option value="decrease">Decreases</option>
+              <option value="new">Newly tracked</option>
             </select>
           </label>
           {group ? (
@@ -230,6 +239,9 @@ export function Explorer() {
               <strong>{formatSeconds(platformTotals?.duration ?? profile.totalDuration)}</strong>{" "}
               s · <strong>{formatCount(platformTotals?.count ?? profile.totalCount)}</strong> hangs
               {platform && <> on {platformLabel(platform)}</>}
+              {state.trend === "increase" && (
+                <> · ranked by added {metric === "count" ? "hangs" : "time"} per day</>
+              )}
             </span>
           )}
         </div>
@@ -254,6 +266,7 @@ export function Explorer() {
               durationOf={durationOf}
               countOf={countOf}
               totalDuration={platformTotals?.duration}
+              trendAllPlatforms={!!platform}
             />
           )}
         </div>

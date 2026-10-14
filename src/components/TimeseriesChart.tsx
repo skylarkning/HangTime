@@ -30,7 +30,15 @@ import type {
   ResolvedSeries,
   TimeseriesIndex,
 } from "@/data/timeseries";
-import { computeTrend, trendBadge, type TrendTone } from "@/data/trend";
+import {
+  comparisonSpan,
+  computeTrend,
+  formatDelta,
+  trendBadge,
+  trendEvidence,
+  trendHeadline,
+  type TrendTone,
+} from "@/data/trend";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import {
   PHASE_META,
@@ -145,6 +153,8 @@ interface LegendItem {
 interface TimeseriesChartProps {
   index: TimeseriesIndex | undefined;
   signature: HangSignature;
+  /** The build in view; the trend chips compare the week ending on it. */
+  endDate: string;
 }
 
 /** Full stack as a multi-line leaf->root list, for a legend item's hover title. */
@@ -210,7 +220,7 @@ function memberLabels(members: MemberSeries[]): string[] {
 }
 
 
-export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
+export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartProps) {
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
@@ -250,26 +260,33 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const affected = series.total.affected && clip(series.total.affected);
   const totalAffected = series.totalAffected && clip(series.totalAffected);
 
-  const trend = computeTrend(series, metric);
+  const trend = computeTrend(series, metric, { endDate });
   const unit = metric === "ms" ? "ms" : "hangs";
   const fmt = (v: number) => Math.round(v).toLocaleString();
 
+  // The claim, then the dates it compares, so the evidence is on screen rather
+  // than only in a hover.
   const chips: { text: string; tone: TrendTone; title?: string }[] = [];
-  if (trend.isNew && trend.newSince) {
-    chips.push({
-      text: `New since ${formatDate(trend.newSince)}`,
-      tone: "blue",
-      title: "First sustained activity after a near-zero baseline",
-    });
-  } else {
-    const change = trendBadge(trend);
-    chips.push({
-      text: change.text === "stable" ? "stable" : `${change.text} vs prior 7d`,
-      tone: change.tone,
-      title:
-        `Recent 7d avg: ${fmt(trend.recentAvg)} ${unit}/day\n` +
-        `Previous 7d avg: ${fmt(trend.priorAvg)} ${unit}/day`,
-    });
+  const span = comparisonSpan(trend);
+  const delta =
+    trend.deltaPerDay != null && (trend.state === "increase" || trend.state === "decrease")
+      ? `, ${formatDelta(trend.deltaPerDay, metric)}`
+      : "";
+  chips.push({
+    text:
+      trend.state === "increase" || trend.state === "decrease"
+        ? `${trendBadge(trend).text}${delta}`
+        : trendHeadline(trend),
+    tone: trendBadge(trend).tone,
+    title: trendEvidence(trend),
+  });
+  if (span) {
+    const { recent, baseline } = trend;
+    const coverage =
+      baseline.days > 0
+        ? `${recent.observed}/${recent.days} and ${baseline.observed}/${baseline.days} days observed`
+        : `${recent.observed}/${recent.days} days observed`;
+    chips.push({ text: `${span} · ${coverage}`, tone: "neutral", title: trendEvidence(trend) });
   }
   if (trend.peakValue != null) {
     chips.push({
@@ -457,7 +474,9 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             Daily hang time (or count) for this signature across the window, so
             you can see if it’s rising, spiking, or newly appeared. Use the
             ms/count toggle to switch metric, a preset window to narrow the
-            range, or drag across the chart to zoom into one.
+            range, or drag across the chart to zoom into one. The chips compare
+            the 7 days ending on this build with the 7 before, and say how many
+            days of each this hang was actually recorded on.
             <span className="eg">
               For a bug that covers several stacks, each bar is the bug total,
               split into its biggest stacks (the rest are summed as{" "}

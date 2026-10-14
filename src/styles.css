@@ -217,7 +217,7 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
 .chip.blue { background: var(--blue-light); color: var(--blue); border-color: #bcd9fb; }
 .chip.neutral { background: var(--surface-alt); color: var(--muted); }
 
-table.hangs .trend { width: 4.5em; }
+table.hangs .trend { width: 7.5em; }
 .trend-badge {
   font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 9px;
   white-space: nowrap; color: var(--muted); background: var(--surface-alt);
