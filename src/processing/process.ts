@@ -214,6 +214,7 @@ export function buildSignatures(
       existing.count += count;
       addAnnotations(existing.annotationStats, annotations, count);
       addCount(existing.platformStats, platform, count);
+      addCount(existing.platformMs, platform, duration);
       continue;
     }
 
@@ -235,6 +236,7 @@ export function buildSignatures(
         bugHang.count += count;
         addAnnotations(bugHang.annotationStats, annotations, count);
         addCount(bugHang.platformStats, platform, count);
+        addCount(bugHang.platformMs, platform, duration);
         // Distinct stack folded into the bug — record it as a member series.
         (bugHang.memberStackKeys ??= [bugHang.stackKey]).push(stackKey);
         bySignature.set(stackKey, bugHang);
@@ -255,6 +257,7 @@ export function buildSignatures(
       stackKey,
       annotationStats,
       platformStats: platform ? { [platform]: count } : {},
+      platformMs: platform ? { [platform]: duration } : {},
       affectedClients: 0,
       knownBug: bug,
     };

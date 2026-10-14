@@ -74,13 +74,15 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
 }
 .list-pane { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
 
+/* Wraps rather than squeezing: the search box keeps a usable width, and the
+   summary drops to its own line when the controls fill the row. */
 .filter-bar {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
   padding: 10px 16px; border-bottom: 1px solid var(--border);
   background: var(--surface); flex: none;
 }
 .filter-bar input[type="text"] {
-  flex: 1; padding: 6px 10px; border: 1px solid var(--border);
+  flex: 1 1 180px; min-width: 180px; padding: 6px 10px; border: 1px solid var(--border);
   border-radius: 5px; font: inherit; color: var(--text); background: var(--surface);
 }
 .filter-bar input[type="text"]:focus { outline: none; border-color: var(--blue); }

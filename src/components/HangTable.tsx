@@ -17,7 +17,18 @@ interface HangTableProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   trendById: Map<string, TrendSummary | null>;
+  /**
+   * Which hang time and count a row shows: the signature's own by default, or
+   * one platform's share of it when the list is narrowed to a platform.
+   */
+  durationOf?: (sig: HangSignature) => number;
+  countOf?: (sig: HangSignature) => number;
+  /** What the time column's percentages are of; defaults to the build total. */
+  totalDuration?: number;
 }
+
+const ownDuration = (sig: HangSignature) => sig.duration;
+const ownCount = (sig: HangSignature) => sig.count;
 
 export function HangTable({
   profile,
@@ -26,16 +37,19 @@ export function HangTable({
   selectedId,
   onSelect,
   trendById,
+  durationOf = ownDuration,
+  countOf = ownCount,
+  totalDuration,
 }: HangTableProps) {
   const totals = useMemo(() => {
     let duration = 0;
     let count = 0;
     for (const sig of signatures) {
-      duration += sig.duration;
-      count += sig.count;
+      duration += durationOf(sig);
+      count += countOf(sig);
     }
     return { duration, count };
-  }, [signatures]);
+  }, [signatures, durationOf, countOf]);
 
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [signatures]);
@@ -105,11 +119,11 @@ export function HangTable({
               <td className="rank">{i + 1}</td>
               <td
                 className="num time"
-                title={`${formatPercentOfTotal(sig.duration, profile.totalDuration)} of total hang time`}
+                title={`${formatPercentOfTotal(durationOf(sig), totalDuration ?? profile.totalDuration)} of total hang time`}
               >
-                {formatSeconds(sig.duration)}
+                {formatSeconds(durationOf(sig))}
               </td>
-              <td className="num count">{formatCount(sig.count)}</td>
+              <td className="num count">{formatCount(countOf(sig))}</td>
               <td className="trend">
                 {badge && (
                   <span className={`trend-badge ${badge.tone}`}>{badge.text}</span>

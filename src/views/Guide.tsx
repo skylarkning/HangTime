@@ -311,8 +311,15 @@ export function Guide() {
               (number of hangs). Time favours long hangs; Count favours frequent
               ones.
             </Item>
+            <Item name="Platform">
+              Show only the hangs seen on Windows, macOS or Linux, with each row's
+              time and count on that platform alone, ranked by them. Most hangs
+              come from Windows, so this is how to find the top hangs on macOS or
+              Linux.
+            </Item>
             <Item name="Trend">
-              Show only regressions, improvements, or new hangs.
+              Show only regressions, improvements, or new hangs. Trends are worked
+              out across all platforms.
             </Item>
             <Item name="Time (s) and Count">
               Seconds of hanging and number of hangs for that signature on this

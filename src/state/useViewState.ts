@@ -6,6 +6,7 @@
 import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ThreadKind } from "@/data/dataSource";
+import { isPlatform, type Platform } from "@/data/platforms";
 
 /** Metric the hang list is ranked by. */
 export type SortKey = "time" | "count";
@@ -24,6 +25,8 @@ export interface ViewState {
   sort: SortKey;
   /** Restrict the list to a trend bucket, or show all. */
   trend: TrendFilter;
+  /** Restrict and re-rank the list to one platform's hangs, or null for all. */
+  platform: Platform | null;
   /** Restrict the list to one near-duplicate group (its group key), or null. */
   group: string | null;
 }
@@ -38,6 +41,7 @@ export function useViewState() {
     selected: params.get("selected"),
     sort: (params.get("sort") as SortKey) || "time",
     trend: (params.get("trend") as TrendFilter) || "all",
+    platform: isPlatform(params.get("platform")) ? (params.get("platform") as Platform) : null,
     group: params.get("group"),
   };
 

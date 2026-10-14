@@ -12,6 +12,8 @@ import type { ThreadKind } from "@/data/dataSource";
 import { memberStacks } from "@/processing/signatureKey";
 import { LoadingProgress } from "@/components/LoadingProgress";
 import { BuildBar } from "@/components/BuildBar";
+import { PLATFORMS, platformLabel, type Platform } from "@/data/platforms";
+import type { HangSignature } from "@/processing/types";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -39,24 +41,55 @@ export function Explorer() {
   // shows the group's stacks one by one (GroupMemberTable) instead of rows.
   const group = state.group ? query.data?.groupsByKey?.[state.group] : undefined;
 
+  // Narrowed to one platform, the list keeps that platform's hangs and shows
+  // and ranks each by its hang time and count on that platform alone, so a
+  // platform with few users isn't buried under hangs that are mostly elsewhere.
+  // (Group mode lists stacks, which carry no platform, so it ignores this.)
+  const platform: Platform | null = group ? null : state.platform;
+  const durationOf = useMemo(
+    () =>
+      platform
+        ? (sig: HangSignature) => sig.platformMs[platform] ?? 0
+        : (sig: HangSignature) => sig.duration,
+    [platform],
+  );
+  const countOf = useMemo(
+    () =>
+      platform
+        ? (sig: HangSignature) => sig.platformStats[platform] ?? 0
+        : (sig: HangSignature) => sig.count,
+    [platform],
+  );
+  const platformTotals = useMemo(() => {
+    if (!platform || !query.data) {
+      return null;
+    }
+    let duration = 0;
+    let count = 0;
+    for (const sig of query.data.signatures) {
+      duration += sig.platformMs[platform] ?? 0;
+      count += sig.platformStats[platform] ?? 0;
+    }
+    return { duration, count };
+  }, [platform, query.data]);
+
   const filtered = useMemo(() => {
     if (!query.data) {
       return [];
     }
     let sigs = filterSignatures(query.data, state.filter);
+    if (platform) {
+      sigs = sigs.filter((s) => countOf(s) > 0);
+    }
     if (state.trend !== "all") {
       sigs = sigs.filter((s) => {
         const t = trendById.get(s.id);
         return t != null && trendCategory(t) === state.trend;
       });
     }
-    const rank =
-      metric === "count"
-        ? (a: (typeof sigs)[number], b: (typeof sigs)[number]) => b.count - a.count
-        : (a: (typeof sigs)[number], b: (typeof sigs)[number]) =>
-            b.duration - a.duration;
-    return [...sigs].sort(rank);
-  }, [query.data, state.filter, state.trend, trendById, metric]);
+    const value = metric === "count" ? countOf : durationOf;
+    return [...sigs].sort((a, b) => value(b) - value(a));
+  }, [query.data, state.filter, state.trend, trendById, metric, platform, countOf, durationOf]);
 
   const selected = useMemo(() => {
     if (!query.data || !state.selected) {
@@ -139,10 +172,36 @@ export function Explorer() {
             className="control"
             title={
               group
+                ? "A group's stacks carry no platform, so this doesn't apply to them"
+                : "Show only hangs seen on one platform, ranked by their time or count there"
+            }
+          >
+            Platform
+            <select
+              value={platform ?? "all"}
+              disabled={!!group}
+              onChange={(e) =>
+                update({ platform: e.target.value === "all" ? null : (e.target.value as Platform) })
+              }
+            >
+              <option value="all">All</option>
+              {PLATFORMS.map((os) => (
+                <option key={os} value={os}>
+                  {platformLabel(os)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            className="control"
+            title={
+              group
                 ? "Trends are per hang row, not per stack, so they don't apply to a group's stacks"
-                : timeseries.data
-                  ? undefined
-                  : "Trend filtering needs the timeseries artifact"
+                : !timeseries.data
+                  ? "Trend filtering needs the timeseries artifact"
+                  : platform
+                    ? "Trends are worked out across all platforms"
+                    : undefined
             }
           >
             Trend
@@ -168,8 +227,9 @@ export function Explorer() {
           ) : (
             <span className="summary">
               <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
-              <strong>{formatSeconds(profile.totalDuration)}</strong> s ·{" "}
-              <strong>{formatCount(profile.totalCount)}</strong> hangs
+              <strong>{formatSeconds(platformTotals?.duration ?? profile.totalDuration)}</strong>{" "}
+              s · <strong>{formatCount(platformTotals?.count ?? profile.totalCount)}</strong> hangs
+              {platform && <> on {platformLabel(platform)}</>}
             </span>
           )}
         </div>
@@ -191,6 +251,9 @@ export function Explorer() {
               selectedId={state.selected}
               onSelect={(id) => update({ selected: id })}
               trendById={trendById}
+              durationOf={durationOf}
+              countOf={countOf}
+              totalDuration={platformTotals?.duration}
             />
           )}
         </div>

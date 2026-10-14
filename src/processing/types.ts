@@ -127,6 +127,8 @@ export interface HangSignature {
   annotationStats: AnnotationStats;
   /** Per-signature OS histogram (platform string -> summed hang count). */
   platformStats: Record<string, number>;
+  /** os -> summed hang ms, alongside platformStats' counts (platform filter). */
+  platformMs: Record<string, number>;
   /** Distinct affected clients on this day (HyperLogLog estimate). */
   affectedClients: number;
   knownBug?: KnownBug;
