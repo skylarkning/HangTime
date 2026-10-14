@@ -40,7 +40,7 @@ export function investigationLink(
   if (state.trend !== "all") {
     params.set("trend", state.trend);
   }
-  for (const key of ["area", "mechanism", "context"] as const) {
+  for (const key of ["area", "mechanism", "context", "bug"] as const) {
     const value = state[key];
     if (value) {
       params.set(key, value);

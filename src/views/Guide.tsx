@@ -301,6 +301,14 @@ export function Guide() {
             the right.
           </p>
           <dl className="guide-list">
+            <Item name="Investigation">
+              A common starting question, as one choice: <em>Credible increases</em>,{" "}
+              <em>Newly tracked</em>, <em>Biggest hangs with no bug</em>,{" "}
+              <em>Main-thread file I/O</em>, <em>Synchronous IPC</em>,{" "}
+              <em>Lock waits</em>, <em>Startup</em>, <em>Shutdown</em> and{" "}
+              <em>While the user was interacting</em>. Each sets the filters below; change
+              any of them and it reads <em>Custom filters</em>.
+            </Item>
             <Item name="Area, Mechanism and When">
               Narrow the list by how its hangs are described: the part of the
               browser (<em>Fonts &amp; text</em>, <em>Startup cache</em>), how the
@@ -312,6 +320,9 @@ export function Guide() {
                 How a hang is described
               </button>
               .
+            </Item>
+            <Item name="Bug">
+              Keep only the hangs no bug tracks yet, or only those one does.
             </Item>
             <Item name="Filter box">
               Type part of a function or library name, for example{" "}
@@ -370,6 +381,17 @@ export function Guide() {
             Every row opens Top Hangs narrowed to it, keeping the build and platform.
           </p>
           <dl className="guide-list">
+            <Item name="Investigations">
+              The saved investigations from Top Hangs as a queue: how many hangs each
+              finds on this build and their share of its hang time.{" "}
+              <em>Credible increases</em> also shows the hang time they added per day.
+            </Item>
+            <Item name="About this data">
+              What the numbers cover: the days the history has data for and how much
+              of this build&rsquo;s hang time its top hangs hold, how much is tracked by
+              a bug, how much has no recognised area, and whether affected-client
+              counts exist for the build.
+            </Item>
             <Item name="By area">
               Each part of the browser&rsquo;s share of the hang time, largest first,
               with the mechanisms that make up most of it underneath. The last column

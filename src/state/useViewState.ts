@@ -18,6 +18,8 @@ import {
 
 /** Metric the hang list is ranked by. */
 export type SortKey = "time" | "count";
+/** Whether the list keeps hangs a bug already tracks, or only the others. */
+export type BugFilter = "untracked" | "tracked";
 /** Trend bucket the hang list is filtered to. */
 export type TrendFilter = "all" | "increase" | "decrease" | "new";
 
@@ -38,6 +40,10 @@ function parseTrend(value: string | null): TrendFilter {
     default:
       return "all";
   }
+}
+
+function parseBug(value: string | null): BugFilter | null {
+  return value === "untracked" || value === "tracked" ? value : null;
 }
 
 export interface ViewState {
@@ -62,6 +68,8 @@ export interface ViewState {
   mechanism: MechanismId | null;
   /** Restrict the list to hangs most of whose reports carry a context. */
   context: ContextId | null;
+  /** Restrict the list to hangs with, or without, a bug tracking them. */
+  bug: BugFilter | null;
 }
 
 export function useViewState() {
@@ -81,6 +89,7 @@ export function useViewState() {
       ? (params.get("mechanism") as MechanismId)
       : null,
     context: isContext(params.get("context")) ? (params.get("context") as ContextId) : null,
+    bug: parseBug(params.get("bug")),
   };
 
   const update = useCallback(
