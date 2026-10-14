@@ -40,6 +40,12 @@ export function investigationLink(
   if (state.trend !== "all") {
     params.set("trend", state.trend);
   }
+  for (const key of ["area", "mechanism", "context"] as const) {
+    const value = state[key];
+    if (value) {
+      params.set(key, value);
+    }
+  }
   const { origin, pathname } = window.location;
   return `${origin}${pathname}#/top-hangs?${params}`;
 }
