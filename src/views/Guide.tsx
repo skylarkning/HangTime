@@ -414,8 +414,9 @@ export function Guide() {
 
         <Section id="hang-detail">
           <p>
-            Selecting a hang in Top Hangs fills the right-hand pane. From top to
-            bottom:
+            Selecting a hang in Top Hangs fills the right-hand pane. A row of links
+            at its top jumps to each section and stays put as the pane scrolls. From
+            top to bottom:
           </p>
           <dl className="guide-list">
             <Item name="Copy link">
@@ -436,10 +437,15 @@ export function Guide() {
               Every frame, starting at frame 0, where the thread was stuck, and
               ending at the outermost caller. Firefox's own code is in normal text;
               operating system and third-party libraries are dimmed, so the Firefox
-              frames stand out. Hover a frame for its source links:{" "}
-              <em>Searchfox</em> and <em>GitHub</em> open a JavaScript frame&apos;s
-              file at its line; for a C++ frame, <em>Searchfox</em> searches for the
-              function, which leads to its definition.
+              frames stand out. A long stack opens focused: the frames at the leaf
+              end, the frames the summary points at, and any the filter matches, with
+              each run in between folded into one row saying how many frames it holds
+              and what they mostly are (event loop and glue, system libraries, Firefox
+              code). Click a folded row to open it, or <em>Show all</em> for every
+              frame. Hover a frame for its source links: <em>Searchfox</em> and{" "}
+              <em>GitHub</em> open a JavaScript frame&apos;s file at its line; for a
+              C++ frame, <em>Searchfox</em> searches for the function, which leads to
+              its definition.
             </Item>
             <Item name="History">
               The hang's daily time or count across the window, one bar per day.
@@ -518,10 +524,13 @@ export function Guide() {
               says so instead of showing a number.
             </Item>
             <Item name="Hang annotations">
-              Extra context Firefox saved with the hang. For example,{" "}
+              Extra context Firefox saved with the hang, summed up in one line such
+              as <em>User interacting 82.8% · Startup 100%</em>. For example,{" "}
               <code>UserInteracting</code> means the user was actively using the
-              browser when it froze. The percentage is the share of this hang's
-              reports carrying that note. See{" "}
+              browser when it froze. The percentage is the share of this hang&apos;s
+              reports carrying that note; a report without it is unknown rather than
+              &ldquo;no&rdquo;. <em>Show all</em> lists every annotation and value.
+              See{" "}
               <button className="link" onClick={() => scrollTo("annotations")}>
                 Hang annotations
               </button>{" "}

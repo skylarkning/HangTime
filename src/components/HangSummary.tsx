@@ -49,7 +49,7 @@ export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
     ) : null;
 
   return (
-    <div className="detail-section hang-summary">
+    <div className="detail-section hang-summary" data-section="Summary">
       <h3>
         Summary
         <InfoTip label="Summary">
