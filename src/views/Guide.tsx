@@ -433,7 +433,15 @@ export function Guide() {
               <em>Copy hang summary</em> copies the latest numbers to paste into it.
             </Item>
             <Item name="Platform">
-              This hang's share of Windows, macOS and Linux reports.
+              Whether a platform carries more of this hang than it does of hangs in
+              general. Most reports come from Windows, so a hang's raw shares mostly
+              say that; instead each platform's share of this hang is set against
+              its share of all hangs on the build (the bar against the dark mark),
+              as a ratio: <code>1×</code> is in line, <code>2×</code> is twice its
+              usual share. A line at the top sums it up, such as{" "}
+              <em>More common on Linux</em> or <em>Windows only</em>. A platform is
+              only called out at 1.5× or more, with at least 20 reports from it, and
+              when the gap is too big to be chance.
             </Item>
             <Item name="Affected clients">
               Roughly how many different users hit this hang: on this build, or

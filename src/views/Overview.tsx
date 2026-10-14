@@ -492,7 +492,8 @@ function PlatformCard({ profile }: { profile: ProcessedProfile }) {
           Where hangs happen
           <InfoTip label="Where hangs happen">
             Share of hangs by operating system, weighted by hang count across all
-            signatures on this build.
+            signatures on this build. A hang&rsquo;s Platform section compares its
+            own mix against these shares.
           </InfoTip>
         </h2>
       </div>

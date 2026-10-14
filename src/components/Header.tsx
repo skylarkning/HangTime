@@ -60,7 +60,7 @@ export function Header({ thread }: HeaderProps) {
           Bug &amp; Feedback
         </a>
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">Dashboard Version: V1.1</span>
+        <span className="version">Dashboard Version: V1.2</span>
       </div>
     </header>
   );

@@ -17,6 +17,8 @@ import {
 import { isKnownComponent, type ProductComponents } from "@/data/components";
 import { useComponents } from "@/queries/hooks";
 import { resolveFrames } from "@/processing/select";
+import { platformBaseline, platformSkew } from "@/data/platformSkew";
+import { platformLabel } from "@/data/platforms";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import { frameLabel, isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
@@ -126,7 +128,7 @@ export function DetailPane({
         trendNote={trendNote}
       />
 
-      <PlatformSection signature={signature} />
+      <PlatformSection profile={profile} signature={signature} />
 
       <AffectedClientsSection
         profile={profile}
@@ -635,49 +637,118 @@ function LeafGroupSection({
   );
 }
 
-const OS_LABELS: Record<string, string> = {
-  Windows: "Windows",
-  Darwin: "macOS",
-  Linux: "Linux",
-};
 
-function PlatformSection({ signature }: { signature: HangSignature }) {
-  const entries = Object.entries(signature.platformStats).sort(
-    (a, b) => b[1] - a[1],
+function PlatformSection({
+  profile,
+  signature,
+}: {
+  profile: ProcessedProfile;
+  signature: HangSignature;
+}) {
+  const skew = useMemo(
+    () => platformSkew(signature.platformStats, platformBaseline(profile)),
+    [signature.platformStats, profile],
   );
-  if (entries.length === 0) {
+  if (skew.reports === 0) {
     return null;
   }
-  const total = entries.reduce((sum, [, count]) => sum + count, 0);
   const pct = (n: number) =>
-    (n / total).toLocaleString(undefined, {
-      style: "percent",
-      minimumFractionDigits: 1,
-    });
+    n.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 1 });
+  const times = (ratio: number | null) =>
+    ratio == null ? "–" : `${ratio < 0.05 ? "0" : ratio.toFixed(1)}×`;
+  const count = (n: number) => `${n.toLocaleString()} report${n === 1 ? "" : "s"}`;
+
+  const { verdict } = skew;
+  let summary: React.ReactNode;
+  if (verdict.kind === "too-few") {
+    summary = <>Only {count(verdict.reports)}, too few to compare platforms.</>;
+  } else if (verdict.kind === "single") {
+    const name = platformLabel(verdict.os);
+    summary =
+      verdict.share === 1 ? (
+        <>
+          <b>{name} only</b>: all {count(verdict.reports)} came from {name}.
+        </>
+      ) : (
+        <>
+          <b>Almost all {name}</b>: {pct(verdict.share)} of {count(verdict.reports)}.
+        </>
+      );
+  } else if (verdict.kind === "skewed") {
+    const [first, ...rest] = verdict.rows;
+    summary =
+      rest.length === 0 ? (
+        <>
+          <b>More common on {first.label}</b> than across all hangs:{" "}
+          {pct(first.share)} of this hang&rsquo;s reports, against {pct(first.baseline)}{" "}
+          of all hangs ({times(first.ratio)}).
+        </>
+      ) : (
+        <>
+          <b>
+            More common on{" "}
+            {verdict.rows.map((row, i) => (
+              <span key={row.os}>
+                {i > 0 && (i === verdict.rows.length - 1 ? " and " : ", ")}
+                {row.label} ({times(row.ratio)})
+              </span>
+            ))}
+          </b>{" "}
+          than across all hangs.
+        </>
+      );
+  } else {
+    summary = <>In line with all hangs: no platform carries noticeably more of it.</>;
+  }
 
   return (
     <div className="detail-section">
       <h3>
         Platform
         <InfoTip label="Platform">
-          Share of this signature’s hangs by operating system, weighted by hang
-          count.
+          Most hang reports come from Windows, so nearly every hang is mostly
+          Windows; that alone says little. This compares each platform&rsquo;s share
+          of <em>this</em> hang with its share of <em>all</em> hangs on the build.{" "}
+          <code>1×</code> is in line with all hangs; <code>2×</code> means the
+          platform carries twice the share of this hang that it does of hangs
+          overall.
           <span className="eg">
-            e.g. <code>Windows 75.8%</code> = most of these hangs came from
-            Windows users.
+            A platform is only called out at 1.5× or more, with at least 20 reports
+            from it, and when the gap is too large to be chance. The comparison is
+            with all hangs, not all users: per-platform user counts aren&rsquo;t in
+            the data yet.
           </span>
         </InfoTip>
       </h3>
-      <ul className="annotation-list">
-        {entries.map(([os, count]) => (
-          <li key={os}>
-            <code>{OS_LABELS[os] ?? os}</code>{" "}
-            <span className="pct">
-              {pct(count)} ({count.toLocaleString()} hangs)
+      <p className="platform-summary">{summary}</p>
+      <div className="platform-rows">
+        {skew.rows.map((row) => (
+          <div key={row.os} className={`platform-row${row.notable ? " notable" : ""}`}>
+            <span className="platform-name">{row.label}</span>
+            <span
+              className="platform-track"
+              title={`${pct(row.share)} of this hang (${count(row.count)}); ${pct(row.baseline)} of all hangs`}
+            >
+              <span className="platform-fill" style={{ width: `${row.share * 100}%` }} />
+              <span className="platform-mark" style={{ left: `${row.baseline * 100}%` }} />
             </span>
-          </li>
+            <span className="platform-share">{pct(row.share)}</span>
+            <span className="platform-base">all hangs {pct(row.baseline)}</span>
+            <span className="platform-ratio">
+              {row.count === 0
+                ? "none"
+                : verdict.kind === "too-few"
+                  ? "–" // a ratio from a handful of reports would only mislead
+                  : times(row.ratio)}
+            </span>
+          </div>
         ))}
-      </ul>
+      </div>
+      <p className="platform-key">
+        <span className="platform-key-fill" /> share of this hang&rsquo;s{" "}
+        {count(skew.reports)}
+        <span className="platform-key-mark" /> share of all hangs on this build
+      </p>
     </div>
   );
 }
