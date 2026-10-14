@@ -674,16 +674,27 @@ tr.diff-changed td { background: #fbeede; color: var(--text); }
 }
 /* Build date bar, at the top of each view (see BuildBar.tsx) */
 .build-bar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 6px 16px; flex-wrap: wrap;
   padding: 10px 16px; font-size: 12.5px;
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .areas-page > .build-bar { border: 1px solid var(--border); border-radius: 10px; }
+.build-bar-main { display: flex; align-items: center; gap: 10px; }
 .build-bar-label { display: flex; align-items: center; font-weight: 600; color: var(--text); }
 .build-bar .build-pill { font-size: 13px; padding: 4px 12px; }
 .build-bar .build-pop { left: 0; right: auto; }
 .build-bar-pending { color: var(--muted); }
-.build-bar-agg { display: flex; align-items: center; margin-left: auto; color: var(--muted); }
+.build-bar-fresh { color: var(--green); font-size: 12px; white-space: nowrap; }
+.build-bar-latest { font-size: 12px; white-space: nowrap; }
+/* What the numbers cover: the rest of the row where there's room, else a row
+   of its own (the narrow list pane), scope on the left and reports on the right. */
+.build-bar-facts {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted);
+}
+.build-bar-scope { white-space: nowrap; }
+.build-bar-agg { display: flex; align-items: center; white-space: nowrap; }
+.build-bar-partial { color: var(--orange); cursor: help; }
 /* A view's loading / error screen, with the build bar still on top. */
 .view-state { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 

@@ -68,3 +68,16 @@ export function formatDate(date: string): string {
   }
   return date;
 }
+
+/** A "YYYYMMDD" date as a short day label like "Apr 14", for running text. */
+export function formatShortDate(date: string): string {
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec(date);
+  if (!match) {
+    return date;
+  }
+  const [, y, m, d] = match;
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d))).toLocaleDateString(
+    undefined,
+    { month: "short", day: "numeric", timeZone: "UTC" },
+  );
+}
