@@ -33,8 +33,8 @@ function presetRange(length: number, days: number): DateRange {
   return { start: Math.max(0, length - days), end: Math.max(0, length - 1) };
 }
 
-/** Range state for a chart over `length` days, defaulting to the full window. */
-export function useChartRange(length: number) {
+/** Range state, optionally opening on recent days around the selected build. */
+export function useChartRange(length: number, initialDays = length, initialEnd?: number) {
   const [range, setRange] = useState<DateRange | null>(null);
   const full = fullRange(length);
   const clamped: DateRange = range
@@ -42,8 +42,8 @@ export function useChartRange(length: number) {
         start: Math.max(0, Math.min(range.start, full.end)),
         end: Math.max(0, Math.min(range.end, full.end)),
       }
-    : full;
-  const reset = useCallback(() => setRange(null), []);
+    : presetRange(Math.min(length, initialEnd != null && initialEnd >= 0 ? initialEnd + 1 : length), initialDays);
+  const reset = useCallback(() => setRange(fullRange(length)), [length]);
   return {
     range: clamped,
     setRange,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useBugs, useProcessedProfile, useTimeseries, useTrendById } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
 import { isLegacyStackId } from "@/state/permalink";
@@ -33,6 +33,7 @@ import { GroupRelationNote } from "@/components/GroupRelationNote";
 
 export function Explorer() {
   const { state, update } = useViewState();
+  const [showFilters, setShowFilters] = useState(false);
   const query = useProcessedProfile(state.thread as ThreadKind, state.date);
   const bugs = useBugs();
   const timeseries = useTimeseries(state.thread as ThreadKind);
@@ -174,206 +175,241 @@ export function Explorer() {
     );
   }
   const profile = query.data;
+  const activeFacets = [
+    { key: "area", value: state.area, label: areaLabel(state.area === NO_AREA ? null : state.area) },
+    { key: "mechanism", value: state.mechanism, label: state.mechanism ? MECHANISMS[state.mechanism].label : "" },
+    { key: "context", value: state.context, label: state.context ? CONTEXTS[state.context].label : "" },
+    { key: "bug", value: state.bug, label: state.bug === "untracked" ? "No bug yet" : "Has a bug" },
+    { key: "trend", value: state.trend === "all" ? null : state.trend, label: state.trend === "new" ? "Newly tracked" : state.trend === "increase" ? "Increases" : "Decreases" },
+    { key: "platform", value: platform, label: platform ? platformLabel(platform) : "" },
+  ].filter((facet) => facet.value);
 
   return (
-    <div className="explorer">
-      <div className="list-pane">
-        <BuildBar date={profile.date} />
-        {bugs.isError && (
-          <div className="banner warn">
-            Couldn’t load the Bugzilla bug list — hangs are not merged by bug.{" "}
-            <button className="link" onClick={() => bugs.refetch()}>
-              Retry
+    <div className="explorer-workspace">
+      <BuildBar date={profile.date} />
+      <div className={`explorer${selected || state.selected ? " has-selection" : ""}`}>
+        <div className="list-pane">
+          <div className="pane-heading">
+            <div><span className="eyebrow">Investigation workspace</span><h1>Top Hangs</h1></div>
+            <button className={`filter-toggle${showFilters ? " active" : ""}`}
+              aria-expanded={showFilters} aria-controls="hang-filters"
+              onClick={() => setShowFilters((value) => !value)}>
+              Filters{narrowed ? " · active" : ""} <span aria-hidden="true">{showFilters ? "−" : "+"}</span>
             </button>
           </div>
-        )}
-        {state.group && (
-          <div className="group-banner">
-            {group ? (
-              <>
-                <span className="group-banner-label">Near-duplicate group</span>
-                <span className="group-banner-name" title={group.displayName}>
-                  {group.displayName}
-                </span>
-                <span className="group-badge">
-                  {group.memberCount.toLocaleString()} stacks
-                </span>
-                <GroupRelationNote profile={profile} group={group} />
-              </>
-            ) : (
-              <span>That near-duplicate group isn’t in this build.</span>
-            )}
-            <button className="btn secondary" onClick={() => update({ group: null })}>
-              Show all hangs
-            </button>
-          </div>
-        )}
-        <div className="filter-bar">
-          <AreaFilters
-            narrowing={narrowing}
-            areaRows={areaRows}
-            mechanismRows={mechanismRows}
-            hasHistory={!!timeseries.data}
-            disabled={!!group}
-            onChange={update}
-          />
-          <input
-            type="text"
-            placeholder="Filter by function or library name…"
-            value={state.filter}
-            onChange={(e) => update({ filter: e.target.value })}
-            autoFocus
-          />
-          <label className="control">
-            Sort
-            <select
-              value={state.sort}
-              onChange={(e) => update({ sort: e.target.value as typeof state.sort })}
-            >
-              <option value="time">Time</option>
-              <option value="count">Count</option>
-            </select>
-          </label>
-          <label
-            className="control"
-            title={
-              group
-                ? "A group's stacks carry no platform, so this doesn't apply to them"
-                : "Show only hangs seen on one platform, ranked by their time or count there"
-            }
-          >
-            Platform
-            <select
-              value={platform ?? "all"}
-              disabled={!!group}
-              onChange={(e) =>
-                update({ platform: e.target.value === "all" ? null : (e.target.value as Platform) })
-              }
-            >
-              <option value="all">All</option>
-              {PLATFORMS.map((os) => (
-                <option key={os} value={os}>
-                  {platformLabel(os)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label
-            className="control"
-            title={
-              group
-                ? "Trends are per hang row, not per stack, so they don't apply to a group's stacks"
-                : !timeseries.data
-                  ? "Trend filtering needs the timeseries artifact"
-                  : platform
-                    ? "Trends are worked out across all platforms"
-                    : "Increases and decreases count only when both weeks have enough data behind them"
-            }
-          >
-            Trend
-            <select
-              value={group ? "all" : state.trend}
-              disabled={!timeseries.data || !!group}
-              onChange={(e) =>
-                update({ trend: e.target.value as typeof state.trend })
-              }
-            >
-              <option value="all">All</option>
-              <option value="increase">Increases</option>
-              <option value="decrease">Decreases</option>
-              <option value="new">Newly tracked</option>
-            </select>
-          </label>
-          {group ? (
-            <span className="summary">
-              <strong>{group.memberCount.toLocaleString()}</strong> stacks ·{" "}
-              <strong>{formatSeconds(group.totalMs)}</strong> s ·{" "}
-              <strong>{formatCount(group.totalCount)}</strong> hangs
-            </span>
-          ) : (
-            <span className="summary">
-              <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
-              <strong>
-                {formatSeconds(
-                  narrowed
-                    ? shownTotals.duration
-                    : (platformTotals?.duration ?? profile.totalDuration),
-                )}
-              </strong>{" "}
-              s ·{" "}
-              <strong>
-                {formatCount(
-                  narrowed ? shownTotals.count : (platformTotals?.count ?? profile.totalCount),
-                )}
-              </strong>{" "}
-              hangs
-              {platform && <> on {platformLabel(platform)}</>}
-              {narrowed && (
+          {bugs.isError && (
+            <div className="banner warn">
+              Couldn’t load the Bugzilla bug list — hangs are not merged by bug.{" "}
+              <button className="link" onClick={() => bugs.refetch()}>
+                Retry
+              </button>
+            </div>
+          )}
+          {state.group && (
+            <div className="group-banner">
+              {group ? (
                 <>
-                  {" "}
-                  ({formatPercentOfTotal(
-                    shownTotals.duration,
-                    platformTotals?.duration ?? profile.totalDuration,
-                  )}{" "}
-                  of hang time)
+                  <span className="group-banner-label">Near-duplicate group</span>
+                  <span className="group-banner-name" title={group.displayName}>
+                    {group.displayName}
+                  </span>
+                  <span className="group-badge">
+                    {group.memberCount.toLocaleString()} stacks
+                  </span>
+                  <GroupRelationNote profile={profile} group={group} />
                 </>
+              ) : (
+                <span>That near-duplicate group isn’t in this build.</span>
               )}
-              {state.trend === "increase" && (
-                <> · ranked by added {metric === "count" ? "hangs" : "time"} per day</>
-              )}
-            </span>
+              <button className="btn secondary" onClick={() => update({ group: null })}>
+                Show all hangs
+              </button>
+            </div>
           )}
-        </div>
-        <div className="table-scroll">
-          {group ? (
-            <GroupMemberTable
-              profile={profile}
-              group={group}
-              filter={state.filter}
-              sort={metric === "count" ? "count" : "time"}
-              selectedId={state.selected}
-              onSelect={(id) => update({ selected: id })}
+          <div className={`filter-bar${showFilters ? " filters-expanded" : ""}`} id="hang-filters">
+            <AreaFilters
+              narrowing={narrowing}
+              areaRows={areaRows}
+              mechanismRows={mechanismRows}
+              hasHistory={!!timeseries.data}
+              disabled={!!group}
+              onChange={update}
             />
-          ) : (
-            <HangTable
-              profile={profile}
-              signatures={filtered}
-              filter={state.filter}
-              selectedId={state.selected}
-              onSelect={(id) => update({ selected: id })}
-              trendById={trendById}
-              durationOf={durationOf}
-              countOf={countOf}
-              totalDuration={platformTotals?.duration}
-              trendAllPlatforms={!!platform}
+            {!showFilters && !group && activeFacets.length > 0 && (
+              <div className="active-filters" aria-label="Active filters">
+                {activeFacets.map((facet) => (
+                  <button key={facet.key} aria-label={`Remove ${facet.label} filter`}
+                    onClick={() => update({ [facet.key]: facet.key === "trend" ? "all" : null })}>
+                    {facet.label} <span aria-hidden="true">×</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <input
+              type="text"
+              placeholder="Search functions or libraries…"
+              aria-label="Search functions or libraries"
+              value={state.filter}
+              onChange={(e) => update({ filter: e.target.value })}
             />
-          )}
+            <label className="control">
+              Sort
+              <select
+                value={state.sort}
+                onChange={(e) => update({ sort: e.target.value as typeof state.sort })}
+              >
+                <option value="time">Time</option>
+                <option value="count">Count</option>
+              </select>
+            </label>
+            <label
+              className="control advanced-control"
+              title={
+                group
+                  ? "A group's stacks carry no platform, so this doesn't apply to them"
+                  : "Show only hangs seen on one platform, ranked by their time or count there"
+              }
+            >
+              Platform
+              <select
+                value={platform ?? "all"}
+                disabled={!!group}
+                onChange={(e) =>
+                  update({ platform: e.target.value === "all" ? null : (e.target.value as Platform) })
+                }
+              >
+                <option value="all">All</option>
+                {PLATFORMS.map((os) => (
+                  <option key={os} value={os}>
+                    {platformLabel(os)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label
+              className="control advanced-control"
+              title={
+                group
+                  ? "Trends are per hang row, not per stack, so they don't apply to a group's stacks"
+                  : !timeseries.data
+                    ? "Trend filtering needs the timeseries artifact"
+                    : platform
+                      ? "Trends are worked out across all platforms"
+                      : "Increases and decreases count only when both weeks have enough data behind them"
+              }
+            >
+              Trend
+              <select
+                value={group ? "all" : state.trend}
+                disabled={!timeseries.data || !!group}
+                onChange={(e) =>
+                  update({ trend: e.target.value as typeof state.trend })
+                }
+              >
+                <option value="all">All</option>
+                <option value="increase">Increases</option>
+                <option value="decrease">Decreases</option>
+                <option value="new">Newly tracked</option>
+              </select>
+            </label>
+            {showFilters && narrowed && (
+              <button className="link clear-filters" onClick={() => update({
+                filter: "", area: null, mechanism: null, context: null, trend: "all", bug: null, platform: null,
+              })}>Clear filters</button>
+            )}
+            {group ? (
+              <span className="summary">
+                <strong>{group.memberCount.toLocaleString()}</strong> stacks ·{" "}
+                <strong>{formatSeconds(group.totalMs)}</strong> s ·{" "}
+                <strong>{formatCount(group.totalCount)}</strong> hangs
+              </span>
+            ) : (
+              <span className="summary">
+                <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
+                <strong>
+                  {formatSeconds(
+                    narrowed
+                      ? shownTotals.duration
+                      : (platformTotals?.duration ?? profile.totalDuration),
+                  )}
+                </strong>{" "}
+                s ·{" "}
+                <strong>
+                  {formatCount(
+                    narrowed ? shownTotals.count : (platformTotals?.count ?? profile.totalCount),
+                  )}
+                </strong>{" "}
+                hangs
+                {platform && <> on {platformLabel(platform)}</>}
+                {narrowed && (
+                  <>
+                    {" "}
+                    ({formatPercentOfTotal(
+                      shownTotals.duration,
+                      platformTotals?.duration ?? profile.totalDuration,
+                    )}{" "}
+                    of hang time)
+                  </>
+                )}
+                {state.trend === "increase" && (
+                  <> · ranked by added {metric === "count" ? "hangs" : "time"} per day</>
+                )}
+              </span>
+            )}
+          </div>
+          <div className="table-scroll">
+            {group ? (
+              <GroupMemberTable
+                profile={profile}
+                group={group}
+                filter={state.filter}
+                sort={metric === "count" ? "count" : "time"}
+                selectedId={state.selected}
+                onSelect={(id) => update({ selected: id })}
+              />
+            ) : (
+              <HangTable
+                profile={profile}
+                signatures={filtered}
+                filter={state.filter}
+                selectedId={state.selected}
+                onSelect={(id) => update({ selected: id })}
+                trendById={trendById}
+                durationOf={durationOf}
+                countOf={countOf}
+                totalDuration={platformTotals?.duration}
+                trendAllPlatforms={!!platform}
+                primaryMetric={metric}
+              />
+            )}
+          </div>
         </div>
+        <DetailPane
+          profile={profile}
+          signature={selected}
+          requestedId={state.selected}
+          filter={state.filter}
+          timeseries={timeseries.data}
+          onSelect={(id) => update({ selected: id })}
+          onBack={() => update({ selected: null })}
+          activeGroup={state.group}
+          onShowGroup={(key) => update({ group: key })}
+          onFilter={(text) =>
+            // Everything the text matches, so the list agrees with what a bug tag
+            // would fold in: drop the other narrowing.
+            update({
+              filter: text,
+              area: null,
+              mechanism: null,
+              context: null,
+              platform: null,
+              group: null,
+              trend: "all",
+              bug: null,
+            })
+          }
+        />
       </div>
-      <DetailPane
-        profile={profile}
-        signature={selected}
-        requestedId={state.selected}
-        filter={state.filter}
-        timeseries={timeseries.data}
-        onSelect={(id) => update({ selected: id })}
-        activeGroup={state.group}
-        onShowGroup={(key) => update({ group: key })}
-        onFilter={(text) =>
-          // Everything the text matches, so the list agrees with what a bug tag
-          // would fold in: drop the other narrowing.
-          update({
-            filter: text,
-            area: null,
-            mechanism: null,
-            context: null,
-            platform: null,
-            group: null,
-            trend: "all",
-            bug: null,
-          })
-        }
-      />
     </div>
   );
 }
@@ -456,7 +492,7 @@ function AreaFilters({
           )}
         </select>
       </label>
-      <label className="control" title={title ?? "Show only hangs in one area of the browser"}>
+      <label className="control advanced-control" title={title ?? "Show only hangs in one area of the browser"}>
         Area
         <select
           value={area ?? "all"}
@@ -474,7 +510,7 @@ function AreaFilters({
         </select>
       </label>
       <label
-        className="control"
+        className="control advanced-control"
         title={title ?? "Show only hangs stuck in one way: file I/O, a lock wait, sync IPC..."}
       >
         Mechanism
@@ -496,7 +532,7 @@ function AreaFilters({
         </select>
       </label>
       <label
-        className="control"
+        className="control advanced-control"
         title={title ?? "Show only hangs where most reports carry this flag"}
       >
         When
@@ -515,7 +551,7 @@ function AreaFilters({
           ))}
         </select>
       </label>
-      <label className="control" title={title ?? "Show only hangs with, or without, a bug"}>
+      <label className="control advanced-control" title={title ?? "Show only hangs with, or without, a bug"}>
         Bug
         <select
           value={bug ?? "all"}

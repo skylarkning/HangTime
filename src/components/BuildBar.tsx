@@ -71,7 +71,7 @@ export function BuildBar({ date }: BuildBarProps) {
       <div className="build-bar-facts">
         <span className="build-bar-scope">{scopeLabel(thread, profile)}</span>
         <span className="build-bar-agg">
-          Grouped by build date
+          Collection window
           {window &&
             (window.open ? (
               <span
@@ -85,9 +85,11 @@ export function BuildBar({ date }: BuildBarProps) {
                 , window open to {lastDay}
               </span>
             ) : (
-              <>, reports through {lastDay}</>
+              <> ends {lastDay}</>
             ))}
           <InfoTip label="Grouped by build date">
+            <p>The date shown is the planned submission-window end, not a verified
+              last-report timestamp. The artifact does not publish its exact collection cutoff.</p>
             Hang reports can be grouped two ways. By <b>build date</b> (build ID):
             the Nightly build the report came from, which pins a hang to the exact
             code users were running. By <b>submission date</b>: the day the report

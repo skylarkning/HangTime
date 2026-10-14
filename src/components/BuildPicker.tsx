@@ -67,7 +67,7 @@ export function BuildPicker({ date, pinned, onSelect, onReset }: BuildPickerProp
       >
         {formatDate(date)}
         {/* Says outright that the date is a control, which a bare pill didn't. */}
-        <span className="build-hint">Click to select build date</span>
+        <span className="build-hint">Change date</span>
         <span className="build-caret" aria-hidden="true">▾</span>
       </button>
       {open && (

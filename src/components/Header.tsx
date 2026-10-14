@@ -11,8 +11,6 @@ interface Tab {
 const TABS: Tab[] = [
   { id: "top-hangs", label: "Top Hangs", to: "/top-hangs" },
   { id: "areas", label: "Areas", to: "/areas" },
-  { id: "per-site", label: "Per-Site" },
-  { id: "alerts", label: "Alerts" },
   { id: "guide", label: "Guide", to: "/guide" },
 ];
 
@@ -30,9 +28,9 @@ export function Header({ thread }: HeaderProps) {
       <div className="brand">
         <img className="logo" src={bhrLogo} alt="" aria-hidden="true" />
         HangTime
-        <span className="subtitle">Background Hang Reporter</span>
+        <span className="subtitle">Background Hang Reporter Dashboard</span>
       </div>
-      <nav className="tabs">
+      <nav className="tabs" aria-label="Main navigation">
         {TABS.map((tab) =>
           tab.to ? (
             // Preserve the current query string (thread/date/…) across tabs.
@@ -40,6 +38,7 @@ export function Header({ thread }: HeaderProps) {
               key={tab.id}
               to={{ pathname: tab.to, search: location.search }}
               className={location.pathname === tab.to ? "active" : ""}
+              aria-current={location.pathname === tab.to ? "page" : undefined}
             >
               {tab.label}
             </Link>
@@ -57,10 +56,10 @@ export function Header({ thread }: HeaderProps) {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Bug &amp; Feedback
+          Feedback ↗
         </a>
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">Dashboard Version: V1.1.2</span>
+        <span className="version">V1.1.2</span>
       </div>
     </header>
   );

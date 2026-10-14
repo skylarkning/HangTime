@@ -51,6 +51,7 @@ import { useViewState } from "@/state/useViewState";
 import { investigationLink, isLegacyStackId } from "@/state/permalink";
 
 interface DetailPaneProps {
+  onBack: () => void;
   profile: ProcessedProfile;
   signature: HangSignature | null;
   /** The `selected` id asked for, which may name a hang not in this build. */
@@ -67,6 +68,7 @@ interface DetailPaneProps {
 }
 
 export function DetailPane({
+  onBack,
   profile,
   signature,
   requestedId,
@@ -102,9 +104,18 @@ export function DetailPane({
     return (
       <div className="detail-empty">
         {requestedId ? (
-          <MissingHang build={profile.date} legacy={isLegacyStackId(requestedId)} />
+          <div>
+            <MissingHang build={profile.date} legacy={isLegacyStackId(requestedId)} />
+            <button className="btn secondary missing-back" onClick={onBack}>Back to hangs</button>
+          </div>
         ) : (
-          "Select a hang to see its stack."
+          <div className="inspector-welcome">
+            <div className="inspector-symbol" aria-hidden="true"><span /><span /><span /></div>
+            <span className="eyebrow">Hang inspector</span>
+            <h2>Select a hang</h2>
+            <p>Select a hang to explore its stack, history, and context.</p>
+            <div className="inspector-hint"><span aria-hidden="true">←</span> Choose a row to begin</div>
+          </div>
         )}
       </div>
     );
@@ -122,6 +133,7 @@ export function DetailPane({
   return (
     <div className="detail-pane" ref={paneRef}>
       <SectionNav paneRef={paneRef}>
+        <button className="inspector-back" onClick={onBack}>← Back to hangs</button>
         <CopyLink href={permalink} build={profile.date} />
       </SectionNav>
       {signature.knownBug && (
@@ -276,9 +288,9 @@ function SectionNav({
 /** Stacks up to this long are always shown whole. */
 const FOCUS_MIN_FRAMES = 16;
 /** A focused stack shows at least this many leaf frames... */
-const LEAF_ROWS_MIN = 8;
+const LEAF_ROWS_MIN = 2;
 /** ...and runs on to an evidence frame up to this depth. */
-const LEAF_ROWS_MAX = 14;
+const LEAF_ROWS_MAX = 6;
 
 /**
  * The stack. A long one opens focused: the leaf frames, where the hang

@@ -223,7 +223,9 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
-  const { range, setRange, reset } = useChartRange(index?.dates.length ?? 0);
+  const { range, setRange, reset } = useChartRange(
+    index?.dates.length ?? 0, 30, endDate ? index?.dates.indexOf(endDate) : undefined,
+  );
   const { chartRef, dragProps, marquee } = useDragZoom(range, setRange);
   const { scrollRef, minWidth } = useDailyChartWidth(range.end - range.start + 1);
 
@@ -483,11 +485,13 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
               build can change without changing the code path (a renumbered
               lambda, a moved line in a JS file), so a hang keeps its history
               across those builds.
+              Shape matching is heuristic: distinct call sites can share a shape.
             </span>
             <span className="eg">
-              For a bug that covers several stacks, each bar is the bug total,
+              For a bug that covers several stacks, each bar sums its tracked stacks,
               split into its biggest stacks (the rest are summed as{" "}
-              <em>Other</em>), so you can see which stack drives a change. Tick <em>Fx releases</em> to mark
+              <em>Other</em>). Untracked stacks are excluded, so this can be a partial
+              view of the bug. Tick <em>Fx releases</em> to mark
               the Firefox train milestones (<code>Fx NN</code>) as vertical
               lines, so a spike or a new hang can be lined up against a release:{" "}
               <em style={{ color: "#d76e00" }}>orange = Release</em>,{" "}
