@@ -716,7 +716,15 @@ function PlatformSection({
             A platform is only called out at 1.5× or more, with at least 20 reports
             from it, and when the gap is too large to be chance. The comparison is
             with all hangs, not all users: per-platform user counts aren&rsquo;t in
-            the data yet.
+            the data yet (
+            <a
+              href="https://bugzilla.mozilla.org/show_bug.cgi?id=2081885"
+              target="_blank"
+              rel="noreferrer"
+            >
+              bug 2081885
+            </a>
+            ).
           </span>
         </InfoTip>
       </h3>

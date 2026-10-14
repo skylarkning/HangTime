@@ -8,7 +8,7 @@
  * share of every hang on the build, as a ratio (1× = in line with all hangs).
  *
  * The baseline is all hangs, not all users: the artifact has no per-platform
- * user or usage counts yet. A platform is only called out when the gap is big
+ * user or usage counts yet (bug 2081885 asks the aggregation job for them). A platform is only called out when the gap is big
  * (1.5× or more), backed by enough reports (20+ on that platform), and unlikely
  * to be chance (more than three standard deviations from what the baseline
  * share predicts), so a handful of macOS reports can't produce a dramatic "5×".
