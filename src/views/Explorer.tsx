@@ -357,6 +357,20 @@ export function Explorer() {
         onSelect={(id) => update({ selected: id })}
         activeGroup={state.group}
         onShowGroup={(key) => update({ group: key })}
+        onFilter={(text) =>
+          // Everything the text matches, so the list agrees with what a bug tag
+          // would fold in: drop the other narrowing.
+          update({
+            filter: text,
+            area: null,
+            mechanism: null,
+            context: null,
+            platform: null,
+            group: null,
+            trend: "all",
+            bug: null,
+          })
+        }
       />
     </div>
   );

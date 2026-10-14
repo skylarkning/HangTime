@@ -8,7 +8,9 @@ import type {
 import type { FramePair } from "@/data/schema";
 import type { TimeseriesIndex } from "@/data/timeseries";
 import { computeTrend, trendSentence } from "@/data/trend";
-import { buildBugReport } from "@/data/bugReport";
+import { buildBugReport, buildHangSummary } from "@/data/bugReport";
+import { tagCandidates, tagScopes, type TagCandidate, type TagScope } from "@/data/tagScope";
+import { MECHANISMS, areaLabel, hangContext } from "@/data/hangAreas";
 import {
   classifyStack,
   dominantPlatform,
@@ -27,7 +29,7 @@ import {
 import { resolveFrames } from "@/processing/select";
 import { platformBaseline, platformSkew } from "@/data/platformSkew";
 import { platformLabel } from "@/data/platforms";
-import { formatCount, formatDate, formatSeconds } from "@/format";
+import { formatCount, formatDate, formatSeconds, formatShare } from "@/format";
 import { frameLabel, isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
@@ -50,6 +52,8 @@ interface DetailPaneProps {
   activeGroup: string | null;
   /** Narrow the list to a near-duplicate group, or back to every hang (null). */
   onShowGroup: (groupKey: string | null) => void;
+  /** Set the list's text filter (to list what a bug tag would match). */
+  onFilter?: (text: string) => void;
 }
 
 export function DetailPane({
@@ -61,6 +65,7 @@ export function DetailPane({
   onSelect,
   activeGroup,
   onShowGroup,
+  onFilter,
 }: DetailPaneProps) {
   const { state } = useViewState();
   // A newly selected hang starts at the top of its details, not wherever the
@@ -146,11 +151,12 @@ export function DetailPane({
       />
 
       <FileBugSection
+        profile={profile}
         signature={signature}
         frames={frames}
-        date={profile.date}
         trendNote={trendNote}
         permalink={permalink}
+        onFilter={onFilter}
       />
 
       <PlatformSection profile={profile} signature={signature} />
@@ -329,51 +335,70 @@ function FrameLinks({ frame, resolver }: { frame: Frame; resolver?: SourceResolv
 }
 
 function FileBugSection({
+  profile,
   signature,
   frames,
-  date,
   trendNote,
   permalink,
+  onFilter,
 }: {
+  profile: ProcessedProfile;
   signature: HangSignature;
   frames: Frame[];
-  date: string;
   trendNote?: string;
   /** Link to this hang pinned to its build, for the bug's Dashboard line. */
   permalink: string;
+  onFilter?: (text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [override, setOverride] = useState<BugComponent | null>(null);
+  const [tagChoice, setTagChoice] = useState<string | null>(null);
   const componentList = useComponents();
+  const tracked = !!signature.knownBug;
 
   const platform = dominantPlatform(signature.platformStats);
   const suggestion = useMemo(
     () => classifyStack(frames, platform),
     [frames, platform],
   );
+  // A tracked hang already has its tag; only a new bug needs one chosen.
+  const { candidates, preferred } = useMemo(
+    () => (tracked ? { candidates: [], preferred: 0 } : tagCandidates(profile, signature)),
+    [profile, signature, tracked],
+  );
+  const scopes = useMemo(
+    () => tagScopes(profile, candidates.map((c) => c.tag)),
+    [profile, candidates],
+  );
 
   // A new selection means a new suggestion; drop any override from the last one.
-  useEffect(() => setOverride(null), [signature.id]);
+  useEffect(() => {
+    setOverride(null);
+    setTagChoice(null);
+  }, [signature.id]);
 
   const suggested =
     suggestion && isKnownComponent(componentList.data, suggestion)
       ? { product: suggestion.product, component: suggestion.component }
       : null;
   const target = override ?? suggested;
+  const candidate = candidates.find((c) => c.tag === tagChoice) ?? candidates[preferred];
+  const tag = candidate?.tag ?? "";
 
-  const report = buildBugReport({
+  const facts = {
     frames,
+    kind: signature.kind,
     count: signature.count,
     durationMs: signature.duration,
-    date: formatDate(date),
+    date: formatDate(profile.date),
     trendNote,
     permalink,
-    target: target ?? undefined,
+    contexts: hangContext(signature.annotationStats, signature.count),
     platformNote: platformNote(signature.platformStats),
-  });
+  };
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(report.comment);
+  const copy = async (text: string) => {
+    await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -384,7 +409,7 @@ function FileBugSection({
         <h3>File a bug</h3>
         <p className="muted">
           Already tracked by Bug {signature.knownBug.id}.{" "}
-          <button className="link" onClick={copy}>
+          <button className="link" onClick={() => copy(buildHangSummary(facts))}>
             {copied ? "Copied" : "Copy hang summary"}
           </button>{" "}
           to add current data to it.
@@ -393,26 +418,34 @@ function FileBugSection({
     );
   }
 
+  const report = buildBugReport({ ...facts, tag, target: target ?? undefined });
+
   return (
     <div className="detail-section">
       <h3>
         File a bug
         <InfoTip label="File a bug">
-          Files straight into the chosen component with the summary, stack,
-          prevalence and whiteboard tag already filled in.
+          Files straight into the chosen component with the summary, what the stack
+          shows, the stack, prevalence and whiteboard tag already filled in.
           <span className="eg">
             The component is guessed by reading the stack from the leaf outwards
             for the innermost frame that names an owner, skipping plumbing like
             binding glue and the IPC transport. On the hangs already tracked by
             a bug it picks the component those bugs were really filed in about
-            four times in five &mdash; so check it before filing.
+            four times in five, so check it before filing.
+          </span>
+          <span className="eg">
+            The whiteboard tag folds every hang with a matching function name into
+            the bug, so it is taken from a frame specific to this hang (the code
+            that made the blocking call) rather than the primitive the thread was
+            stuck in. The line below it says what the tag would match on this build.
           </span>
         </InfoTip>
       </h3>
       <p className="muted">
         {suggestion
           ? "HangTime has suggested the following component for this hang signature, you may also change this if you feel this is wrong."
-          : "HangTime couldn’t tell which component owns this hang — the stack is all shared plumbing. Please pick one."}
+          : "HangTime couldn’t tell which component owns this hang: the stack is all shared plumbing. Please pick one."}
       </p>
       <ComponentPicker
         value={target}
@@ -421,17 +454,46 @@ function FileBugSection({
       />
       {suggestion && (
         <p className="bug-why">
-          <span className={`chip ${CONFIDENCE_TONE[suggestion.confidence]}`}>
-            {suggestion.confidence} confidence
+          <span>
+            Suggested from frame {suggestion.frameIndex},{" "}
+            <code>{shortName(suggestion.frameName)}</code>, which matched{" "}
+            <code>{suggestion.matched}</code>.
           </span>
-          matched <code>{suggestion.matched}</code> in frame{" "}
-          {suggestion.frameIndex}, <code>{shortName(suggestion.frameName)}</code>
+          {suggestion.caveat && (
+            <span
+              className="chip amber"
+              title={
+                suggestion.caveat === "broad-rule"
+                  ? "The matching rule names a namespace or layer shared by many components"
+                  : "The deciding frame is far from where the thread was stuck"
+              }
+            >
+              {suggestion.caveat === "broad-rule" ? "broad match" : "deep in the stack"}: check it
+            </span>
+          )}
         </p>
       )}
       <p className="muted">
         Files with whiteboard tag <code>{report.whiteboard}</code>, so the
         dashboard auto-merges matching hangs from the next run.
       </p>
+      {candidate && (
+        <TagScopeNote
+          candidate={candidate}
+          scope={scopes.get(tag)}
+          signature={signature}
+          onFilter={onFilter}
+        />
+      )}
+      {candidates.length > 1 && (
+        <TagPicker
+          candidates={candidates}
+          scopes={scopes}
+          total={profile.totalDuration}
+          value={tag}
+          onChange={setTagChoice}
+        />
+      )}
       <div className="report-actions">
         <a
           className={`btn${target ? "" : " disabled"}`}
@@ -442,7 +504,7 @@ function FileBugSection({
         >
           {target ? `File in ${target.component}` : "Pick a component first"}
         </a>
-        <button className="btn secondary" onClick={copy}>
+        <button className="btn secondary" onClick={() => copy(report.comment)}>
           {copied ? "Copied" : "Copy comment"}
         </button>
       </div>
@@ -450,7 +512,142 @@ function FileBugSection({
   );
 }
 
-const CONFIDENCE_TONE = { high: "green", medium: "amber", low: "neutral" };
+/** A tag matching more than this many signatures folds in more than one hang. */
+const BROAD_SIGNATURES = 5;
+/** ... or more than this multiple of the hang's own time. */
+const BROAD_TIME = 3;
+/** Matched time outside the hang's own area past which it's likely several problems. */
+const MIXED_SHARE = 0.3;
+/** ... and past which a wide tag is worth a second look. */
+const MIXED_NOTE = 0.1;
+
+/**
+ * What the chosen tag would fold into the bug on this build, and a warning when
+ * that is more than this hang: a shared primitive, or signatures spread across
+ * several areas.
+ */
+function TagScopeNote({
+  candidate,
+  scope,
+  signature,
+  onFilter,
+}: {
+  candidate: TagCandidate;
+  scope: TagScope | undefined;
+  signature: HangSignature;
+  onFilter?: (text: string) => void;
+}) {
+  if (!scope) {
+    return null;
+  }
+  const { area } = signature.kind;
+  const inArea = scope.msByArea.get(area) ?? 0;
+  const outside = scope.ms > 0 ? 1 - inArea / scope.ms : 0;
+  const wide = scope.signatures > BROAD_SIGNATURES || scope.ms > BROAD_TIME * signature.duration;
+  const mixed = scope.signatures > BROAD_SIGNATURES && outside >= MIXED_SHARE;
+  const pct = (share: number) =>
+    share.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 1 });
+  const { generic } = candidate;
+
+  let warning: React.ReactNode = null;
+  if (generic) {
+    const what =
+      generic.kind === "mechanism"
+        ? `a ${MECHANISMS[generic.mechanism].phrase} frame`
+        : generic.kind === "system"
+          ? "system library code"
+          : "shared glue code";
+    warning = (
+      <>
+        <code>{candidate.tag}</code> is {what} that many unrelated hangs pass through,
+        so this tag would fold them into one bug. Pick a frame specific to this hang.
+      </>
+    );
+  } else if (mixed) {
+    warning = (
+      <>
+        Its {scope.signatures.toLocaleString()} signatures span several areas: only{" "}
+        {pct(1 - outside)} of their hang time is in {areaLabel(area)}, so they may be
+        different problems. A frame closer to this hang&rsquo;s own code would be
+        narrower.
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className={`tag-scope${warning ? " warn" : ""}`}>
+        This tag would match <b>{scope.signatures.toLocaleString()}</b> signature
+        {scope.signatures === 1 ? "" : "s"} and <b>{pct(scope.share)}</b> of observed hang
+        time on this build
+        {scope.trackedElsewhere > 0 && (
+          <>
+            , {scope.trackedElsewhere.toLocaleString()} of them already tracked by other
+            bugs
+          </>
+        )}
+        .
+        {onFilter && scope.signatures > 1 && (
+          <>
+            {" "}
+            <button className="link" onClick={() => onFilter(candidate.tag)}>
+              List them
+            </button>
+          </>
+        )}
+      </p>
+      {warning && <p className="tag-warning">{warning}</p>}
+      {!warning && wide && outside >= MIXED_NOTE && (
+        <p className="muted tag-note">
+          It folds {scope.signatures.toLocaleString()} signatures into one bug, with{" "}
+          {pct(1 - outside)} of their time in {areaLabel(area)}. Check they are the same
+          problem before filing.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** The frame the whiteboard tag is taken from, with what each would match. */
+function TagPicker({
+  candidates,
+  scopes,
+  total,
+  value,
+  onChange,
+}: {
+  candidates: TagCandidate[];
+  scopes: Map<string, TagScope>;
+  total: number;
+  value: string;
+  onChange: (tag: string) => void;
+}) {
+  const option = (c: TagCandidate) => {
+    const scope = scopes.get(c.tag);
+    const n = scope?.signatures ?? 0;
+    const matches = `${n.toLocaleString()} signature${n === 1 ? "" : "s"}`;
+    return (
+      <option key={c.tag} value={c.tag}>
+        {`frame ${c.depth}: ${c.tag}  (${matches}, ${formatShare(scope?.ms ?? 0, total)})`}
+      </option>
+    );
+  };
+  const specific = candidates.filter((c) => !c.generic);
+  const shared = candidates.filter((c) => c.generic);
+  return (
+    <label className="tag-picker">
+      <span>Tag frame</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {specific.length > 0 && (
+          <optgroup label="Specific to this hang">{specific.map(option)}</optgroup>
+        )}
+        {shared.length > 0 && (
+          <optgroup label="Shared low-level frames (broad)">{shared.map(option)}</optgroup>
+        )}
+      </select>
+    </label>
+  );
+}
 
 /** Drop the argument list so a deciding frame reads as a name. */
 function shortName(funcName: string): string {

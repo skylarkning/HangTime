@@ -464,11 +464,24 @@ export function Guide() {
               so you can tick two and compare them side by side.
             </Item>
             <Item name="File a bug">
-              Opens a new Bugzilla bug with the summary, stack, numbers and{" "}
-              <code>[bhr:…]</code> whiteboard tag filled in. HangTime suggests a
-              component by reading the stack; it's right about four times in five,
-              so check it before filing. For a hang that already has a bug,{" "}
-              <em>Copy hang summary</em> copies the latest numbers to paste into it.
+              Opens a new Bugzilla bug with the summary, what the stack shows, the
+              stack, numbers and <code>[bhr:…]</code> whiteboard tag filled in.
+              HangTime suggests a component by reading the stack and shows the frame
+              it matched; it's right about four times in five, so check it before
+              filing, especially when it&apos;s marked <em>broad match</em> or{" "}
+              <em>deep in the stack</em>.
+              <br />
+              The whiteboard tag merges every hang whose stack has a matching
+              function into the bug, so HangTime takes it from a frame specific to
+              this hang (usually the code that made the blocking call), never from a
+              primitive like <code>WaitOnAddress</code> or <code>memcpy</code>. A line
+              under it says how many signatures and how much hang time the tag would
+              match on this build, with <em>List them</em> to see them, and warns
+              when that is shared code or spans several areas. <em>Tag frame</em>{" "}
+              picks a different frame from the stack.
+              <br />
+              For a hang that already has a bug, <em>Copy hang summary</em> copies
+              the latest numbers to paste into it.
             </Item>
             <Item name="Platform">
               Whether a platform carries more of this hang than it does of hangs in
