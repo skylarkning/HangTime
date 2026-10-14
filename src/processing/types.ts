@@ -87,8 +87,9 @@ export interface KnownBug {
 /**
  * One merged hang signature, after stack-dedup and bug-merging.
  *
- * `id` is the stable identity used everywhere (list rows, detail view, and the
- * future timeseries join): the representative stack's func indices joined, or
+ * `id` is the identity used everywhere in the UI (list rows, detail view, and
+ * the `selected` link parameter): a hash of the representative stack's frames
+ * that is the same in every daily artifact (see `stableStackId`), or
  * `bug:<id>` for bug-merged signatures. See the signature-identity contract.
  */
 export interface HangSignature {

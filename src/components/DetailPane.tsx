@@ -34,10 +34,14 @@ import { InfoTip } from "./InfoTip";
 import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
 import { memberStacks } from "@/processing/signatureKey";
+import { useViewState } from "@/state/useViewState";
+import { investigationLink, isLegacyStackId } from "@/state/permalink";
 
 interface DetailPaneProps {
   profile: ProcessedProfile;
   signature: HangSignature | null;
+  /** The `selected` id asked for, which may name a hang not in this build. */
+  requestedId: string | null;
   filter: string;
   timeseries: TimeseriesIndex | undefined;
   onSelect: (id: string) => void;
@@ -50,12 +54,14 @@ interface DetailPaneProps {
 export function DetailPane({
   profile,
   signature,
+  requestedId,
   filter,
   timeseries,
   onSelect,
   activeGroup,
   onShowGroup,
 }: DetailPaneProps) {
+  const { state } = useViewState();
   // A newly selected hang starts at the top of its details, not wherever the
   // previous one had been scrolled to.
   const paneRef = useRef<HTMLDivElement>(null);
@@ -64,9 +70,18 @@ export function DetailPane({
   }, [signature?.id]);
 
   if (!signature) {
-    return <div className="detail-empty">Select a hang to see its stack.</div>;
+    return (
+      <div className="detail-empty">
+        {requestedId ? (
+          <MissingHang build={profile.date} legacy={isLegacyStackId(requestedId)} />
+        ) : (
+          "Select a hang to see its stack."
+        )}
+      </div>
+    );
   }
   const frames = resolveFrames(profile, signature.frameKeys);
+  const permalink = investigationLink(state, profile.date, signature.id);
 
   let trendNote: string | undefined;
   const series = timeseries?.resolveByStack(memberStacks(signature));
@@ -80,6 +95,8 @@ export function DetailPane({
 
   return (
     <div className="detail-pane" ref={paneRef}>
+      <CopyLink href={permalink} build={profile.date} />
+
       {signature.knownBug && (
         <div className="detail-section">
           <h3>Bugzilla</h3>
@@ -116,6 +133,7 @@ export function DetailPane({
         frames={frames}
         date={profile.date}
         trendNote={trendNote}
+        permalink={permalink}
       />
 
       <PlatformSection profile={profile} signature={signature} />
@@ -128,6 +146,50 @@ export function DetailPane({
 
       <AnnotationStatsSection signature={signature} />
 
+    </div>
+  );
+}
+
+/** Why a linked hang isn't shown: the build doesn't have it. */
+function MissingHang({ build, legacy }: { build: string; legacy: boolean }) {
+  return (
+    <>
+      That hang isn&rsquo;t in build {formatDate(build)}.
+      {legacy && (
+        <p className="muted">
+          The link is from an older HangTime, whose links only find a hang on the
+          build they were copied from.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Copies a link to this hang that stays on this build. */
+function CopyLink({ href, build }: { href: string; build: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(href);
+    } catch {
+      return; // clipboard refused; the link itself can still be copied
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="detail-link">
+      <a
+        className="link"
+        href={href}
+        onClick={(e) => {
+          e.preventDefault();
+          copy();
+        }}
+        title={`A link to this hang on build ${formatDate(build)}, with the list's filters. It stays on that build when newer ones arrive.`}
+      >
+        {copied ? "Copied" : "Copy link"}
+      </a>
     </div>
   );
 }
@@ -227,11 +289,14 @@ function FileBugSection({
   frames,
   date,
   trendNote,
+  permalink,
 }: {
   signature: HangSignature;
   frames: Frame[];
   date: string;
   trendNote?: string;
+  /** Link to this hang pinned to its build, for the bug's Dashboard line. */
+  permalink: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [override, setOverride] = useState<BugComponent | null>(null);
@@ -258,7 +323,7 @@ function FileBugSection({
     durationMs: signature.duration,
     date: formatDate(date),
     trendNote,
-    permalink: window.location.href,
+    permalink,
     target: target ?? undefined,
     platformNote: platformNote(signature.platformStats),
   });

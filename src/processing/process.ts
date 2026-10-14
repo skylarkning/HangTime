@@ -15,7 +15,12 @@
  */
 
 import type { FramePair, FuncIndex, Profile, Thread } from "@/data/schema";
-import { canonicalKey, canonicalKeyFromFrames } from "./signatureKey";
+import {
+  canonicalKey,
+  canonicalKeyFromFrames,
+  frameHashes,
+  stableStackId,
+} from "./signatureKey";
 import type {
   AnnotationStats,
   HangSignature,
@@ -178,6 +183,7 @@ export function buildSignatures(
   );
 
   const bugByFunc = buildBugByFunc(bugs, funcNames);
+  const hashes = frameHashes(funcNames, libNames);
   const bySignature = new Map<string, HangSignature>();
   // A bug's chosen representative signature, so distinct stacks merge into it.
   const byBug = new Map<number, HangSignature>();
@@ -248,7 +254,7 @@ export function buildSignatures(
     const annotationStats: AnnotationStats = {};
     addAnnotations(annotationStats, annotations, count);
     const sig: HangSignature = {
-      id: bug ? `bug:${bug.id}` : stackKey,
+      id: bug ? `bug:${bug.id}` : stableStackId(frameKeys, hashes),
       sampleIndex: i,
       frameKeys,
       duration,
