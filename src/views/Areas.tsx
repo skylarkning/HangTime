@@ -30,8 +30,8 @@ import { BuildBar } from "@/components/BuildBar";
 import { InfoTip } from "@/components/InfoTip";
 import { LoadingProgress } from "@/components/LoadingProgress";
 
-/** Rows a card shows before "Show all". */
-const TOP_ROWS = 12;
+/** Enough to scan the largest contributors, with the full breakdown one click away. */
+const TOP_ROWS = 8;
 
 export function Areas() {
   const { state, update } = useViewState();
@@ -95,11 +95,11 @@ export function Areas() {
     <div className="areas-page">
       <BuildBar date={query.data.date} />
       <div className="areas-intro">
-        <p>
-          Where this build&rsquo;s main-thread hang time goes. Each hang is described by
-          the <b>area</b> of the browser its stack names and the <b>mechanism</b> by which
-          the thread was stuck. Pick a row to list those hangs.
-        </p>
+        <div>
+          <span className="eyebrow">Build analysis</span>
+          <h1>Areas</h1>
+          <p>See where hang time accumulates. Choose a starting point to investigate.</p>
+        </div>
         <label className="control">
           Platform
           <select
@@ -108,7 +108,7 @@ export function Areas() {
               update({ platform: e.target.value === "all" ? null : (e.target.value as Platform) })
             }
           >
-            <option value="all">All</option>
+            <option value="all">All platforms</option>
             {PLATFORMS.map((os) => (
               <option key={os} value={os}>
                 {platformLabel(os)}
@@ -117,25 +117,12 @@ export function Areas() {
           </select>
         </label>
       </div>
-      <div className="areas-top">
-        <InvestigationQueue
-          profile={query.data}
-          trendById={trendById}
-          hasHistory={!!timeseries.data}
-          platform={platform}
-          durationOf={measures.durationOf}
-          total={total}
-        />
-        <DataCard
-          profile={query.data}
-          index={timeseries.data}
-          trendById={trendById}
-          bugsFailed={bugs.isError}
-          unattributed={unattributed}
-          total={total}
-        />
+      <div className="areas-total">
+        <span><strong>{formatSeconds(total)}<small> s</small></strong> observed hang time</span>
+        <span>{formatCount(areas.reduce((sum, row) => sum + row.count, 0))} sampled hangs</span>
+        <span>Grouped from stacks, not confirmed causes</span>
       </div>
-      <div className="areas-grid">
+      <div className="areas-grid areas-bento">
         <BreakdownCard
           title="By area"
           info={
@@ -153,6 +140,14 @@ export function Areas() {
           rows={areas}
           total={total}
           param="area"
+        />
+        <InvestigationQueue
+          profile={query.data}
+          trendById={trendById}
+          hasHistory={!!timeseries.data}
+          platform={platform}
+          durationOf={measures.durationOf}
+          total={total}
         />
         <BreakdownCard
           title="By mechanism"
@@ -172,8 +167,15 @@ export function Areas() {
           total={total}
           param="mechanism"
         />
+        <ContextCard rows={contexts} total={total} />
+        <DataCard
+          profile={query.data}
+          index={timeseries.data}
+          bugsFailed={bugs.isError}
+          unattributed={unattributed}
+          total={total}
+        />
       </div>
-      <ContextCard rows={contexts} total={total} />
       <p className="areas-note">
         Areas and mechanisms are read from function and library names, since the hang
         data carries no source paths. See the{" "}
@@ -223,13 +225,13 @@ function BreakdownCard<K extends string>({
   const pct = formatShare;
 
   return (
-    <div className="ov-card">
+    <section className={`ov-card breakdown-card breakdown-${param}`}>
       <div className="ov-card-head">
         <h2>
           {title}
           <InfoTip label={title}>{info}</InfoTip>
         </h2>
-        <span className="areas-col-head">share of hang time · untracked</span>
+        <span className="areas-col-head">Hang time / no bug</span>
       </div>
       <ol className="breakdown">
         {shown.map((row) => (
@@ -264,7 +266,7 @@ function BreakdownCard<K extends string>({
           {showAll ? "Show fewer" : `Show all ${rows.length}`}
         </button>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -277,10 +279,10 @@ function ContextCard({
 }) {
   const linkTo = useNarrowedLink();
   return (
-    <div className="ov-card">
+    <section className="ov-card context-card">
       <div className="ov-card-head">
         <h2>
-          When
+          Context
           <InfoTip label="When">
             Hang time in hangs where most reports carry a flag Firefox records with
             the hang: during startup or shutdown, while the user was interacting, with
@@ -293,6 +295,7 @@ function ContextCard({
           </InfoTip>
         </h2>
       </div>
+      <p className="card-description">Hang time in signatures where most reports carry each flag. Groups overlap.</p>
       {rows.length === 0 ? (
         <p className="ov-empty">No hang on this build carries a context flag on most reports.</p>
       ) : (
@@ -308,7 +311,7 @@ function ContextCard({
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -372,10 +375,10 @@ function InvestigationQueue({
   };
 
   return (
-    <div className="ov-card">
+    <section className="ov-card investigations-card">
       <div className="ov-card-head">
         <h2>
-          Investigations
+          Start an investigation
           <InfoTip label="Investigations">
             Common starting points, each a preset of the Top Hangs filters (also under{" "}
             <b>Investigation</b> there). The figures are how many hangs each finds on
@@ -388,6 +391,7 @@ function InvestigationQueue({
           </InfoTip>
         </h2>
       </div>
+      <p className="card-description">Focused views, ranked by observed impact.</p>
       <ul className="queue">
         {rows.map(({ inv, signatures, ms, added }) => {
           const unavailable = inv.needsHistory && !hasHistory;
@@ -406,7 +410,7 @@ function InvestigationQueue({
                 >
                   <span className="queue-label">{inv.label}</span>
                   <span className="queue-stat">
-                    {formatCount(signatures)} hang{signatures === 1 ? "" : "s"}
+                    {formatCount(signatures)} signature{signatures === 1 ? "" : "s"}
                   </span>
                   <span className="queue-stat">{formatShare(ms, total)}</span>
                   <span className="queue-extra">
@@ -418,7 +422,7 @@ function InvestigationQueue({
           );
         })}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -429,34 +433,35 @@ function InvestigationQueue({
 function DataCard({
   profile,
   index,
-  trendById,
   bugsFailed,
   unattributed,
   total,
 }: {
   profile: ProcessedProfile;
   index: TimeseriesIndex | undefined;
-  trendById: Map<string, TrendSummary | null>;
   bugsFailed: boolean;
   unattributed: number;
   total: number;
 }) {
+  const covered = useMemo(() => {
+    if (!index) return 0;
+    index.bind(profile);
+    let ms = 0;
+    for (const sig of profile.signatures) {
+      ms += sig.duration * index.coverageForSignature(sig).share;
+    }
+    return ms;
+  }, [index, profile]);
   let history: React.ReactNode = "Not loaded, so trends are unavailable.";
   if (index) {
     const recorded = index.dates.filter((_, i) => index.dayHasData[i]);
-    let covered = 0;
-    for (const sig of profile.signatures) {
-      if (trendById.get(sig.id)) {
-        covered += sig.duration;
-      }
-    }
     history = recorded.length ? (
       <>
         {formatDateRange(recorded[0], recorded[recorded.length - 1])}, with data on{" "}
         {recorded.length} of {index.dates.length} days. Only each day&rsquo;s top
-        hangs are kept: they hold {formatShare(covered, profile.totalDuration)} of this
-        build&rsquo;s hang time, and a hang missing from a day may only have fallen
-        below the cut.
+        hangs are kept. Matching stacks cover {formatShare(covered, profile.totalDuration)} of
+        this build&rsquo;s hang time across all platforms. Historical days can be partial;
+        a missing stack may have fallen below the cut.
       </>
     ) : (
       "No day in the window has data."
@@ -470,10 +475,10 @@ function DataCard({
   }
 
   return (
-    <div className="ov-card">
+    <section className="ov-card data-card">
       <div className="ov-card-head">
         <h2>
-          About this data
+          Read the data with context
           <InfoTip label="About this data">
             What this build&rsquo;s numbers cover. Counts and hang time depend on how
             many people ran the build and how many reports arrived, so they compare
@@ -501,6 +506,6 @@ function DataCard({
               "not of all users."}
         </dd>
       </dl>
-    </div>
+    </section>
   );
 }

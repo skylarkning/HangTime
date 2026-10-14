@@ -1,80 +1,89 @@
-/**
- * A small "i" affordance next to a label. Click to open a short plain-language
- * explanation of what a number/column means; click outside or press Escape to
- * dismiss. The popover is fixed-positioned from the button's rect so it never
- * gets clipped by scrolling table/detail containers.
- */
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { placePopover } from "./popoverPosition";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-
-const POPOVER_WIDTH = 260;
-
-export function InfoTip({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+/** Clickable help, rendered outside scrolling cards and kept inside the viewport. */
+export function InfoTip({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const wrapRef = useRef<HTMLSpanElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState<ReturnType<typeof placePopover> | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  const id = useId();
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const reposition = () => {
+      if (!button.current) return;
+      const rect = button.current.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        setOpen(false);
+        return;
+      }
+      const next = placePopover(rect, { width: window.innerWidth, height: window.innerHeight },
+        popover.current?.getBoundingClientRect().height ?? 0);
+      setPosition((current) => current && Object.keys(next).every(
+        (key) => current[key as keyof typeof next] === next[key as keyof typeof next],
+      ) ? current : next);
+    };
+    reposition();
+    const observer = new ResizeObserver(reposition);
+    if (popover.current) observer.observe(popover.current);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open, position !== null, children]);
+
+  // Measure again once the portal is mounted at its constrained width.
+  useLayoutEffect(() => {
+    if (open && position && popover.current && button.current) {
+      const next = placePopover(button.current.getBoundingClientRect(),
+        { width: window.innerWidth, height: window.innerHeight }, popover.current.getBoundingClientRect().height);
+      if (next.top !== position.top || next.left !== position.left) setPosition(next);
+    }
+  }, [open, position]);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!button.current?.contains(event.target as Node) && !popover.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
         setOpen(false);
+        button.current?.focus({ preventScroll: true });
       }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
     };
   }, [open]);
 
-  const toggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setPos({
-        top: rect.bottom + 6,
-        left: Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - 12),
-      });
-    }
-    setOpen((v) => !v);
-  };
+  useLayoutEffect(() => {
+    if (open && position) popover.current?.focus({ preventScroll: true });
+  }, [open, position !== null]);
 
   return (
-    <span className="infotip" ref={wrapRef}>
-      <button
-        ref={btnRef}
-        type="button"
-        className="infotip-btn"
-        aria-label={`About ${label}`}
-        aria-expanded={open}
-        onClick={toggle}
-      >
+    <span className="infotip">
+      <button ref={button} type="button" className="infotip-btn"
+        aria-label={`About ${label}`} aria-expanded={open} aria-controls={open ? id : undefined}
+        onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}>
         i
       </button>
-      {open && pos && (
-        <div
-          className="infotip-pop"
-          role="tooltip"
-          style={{ top: pos.top, left: pos.left, width: POPOVER_WIDTH }}
-        >
+      {open && position && createPortal(
+        <div ref={popover} id={id} className="infotip-pop" role="dialog" tabIndex={-1} aria-label={`About ${label}`}
+          style={position} onClick={(event) => event.stopPropagation()}>
+          <div className="infotip-heading"><strong>{label}</strong>
+            <button type="button" aria-label="Close explanation" onClick={() => { setOpen(false); button.current?.focus(); }}>×</button>
+          </div>
           {children}
-        </div>
+        </div>, document.body,
       )}
     </span>
   );

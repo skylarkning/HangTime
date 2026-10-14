@@ -28,6 +28,7 @@ interface HangTableProps {
    * has all-platform series. The column header says so.
    */
   trendAllPlatforms?: boolean;
+  primaryMetric?: "ms" | "count";
 }
 
 const ownDuration = (sig: HangSignature) => sig.duration;
@@ -44,6 +45,7 @@ export function HangTable({
   countOf = ownCount,
   totalDuration,
   trendAllPlatforms = false,
+  primaryMetric = "ms",
 }: HangTableProps) {
   const totals = useMemo(() => {
     let duration = 0;
@@ -62,25 +64,38 @@ export function HangTable({
   const remaining = signatures.length - visible.length;
 
   return (
-    <table className="hangs">
+    <table className={`hangs${primaryMetric === "count" ? " sort-count" : ""}`}>
       <thead>
         <tr>
           <th className="rank">#</th>
+          <th>
+            Hang
+            <InfoTip label="Hang">
+              What the hang is, read from its stack: the area of the browser it
+              is in and how the thread was stuck, then (in grey) the frame the
+              stack stopped on and the Firefox code that called it.
+              <span className="eg">
+                e.g. <b>Startup cache: lock wait</b> during JS module loading, over{" "}
+                <code>WaitOnAddress ← StartupCache::GetBuffer</code>. It describes
+                where the thread was, not a confirmed cause.
+              </span>
+            </InfoTip>
+          </th>
           <th className="num time">
             Time (s)
             <InfoTip label="Time (s)">
               Total time Firefox’s main thread spent hanging on this signature
-              during the day, in seconds — every sampled hang’s duration summed.
+              for this build, in seconds — every sampled hang’s duration summed.
               <span className="eg">
                 e.g. <code>837</code> = 837 seconds of cumulative
-                unresponsiveness across sampled users that day.
+                unresponsiveness across sampled reports for this build.
               </span>
             </InfoTip>
           </th>
           <th className="num count">
             Count
             <InfoTip label="Count">
-              How many hangs matched this signature in the day’s sampled BHR
+              How many hangs matched this signature in this build’s sampled BHR
               reports. Each is one main-thread stall.
               <span className="eg">
                 e.g. <code>1,773</code> = 1,773 recorded hang occurrences.
@@ -109,19 +124,6 @@ export function HangTable({
               </span>
             </InfoTip>
           </th>
-          <th>
-            Hang
-            <InfoTip label="Hang">
-              What the hang is, read from its stack: the area of the browser it
-              is in and how the thread was stuck, then (in grey) the frame the
-              stack stopped on and the Firefox code that called it.
-              <span className="eg">
-                e.g. <b>Startup cache: lock wait</b> during JS module loading, over{" "}
-                <code>WaitOnAddress ← StartupCache::GetBuffer</code>. It describes
-                where the thread was, not a confirmed cause.
-              </span>
-            </InfoTip>
-          </th>
         </tr>
       </thead>
       <tbody>
@@ -139,9 +141,20 @@ export function HangTable({
             <tr
               key={sig.id}
               className={sig.id === selectedId ? "selected" : ""}
+              tabIndex={0}
+              aria-selected={sig.id === selectedId}
+              onKeyDown={(event) => {
+                if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                  onSelect(sig.id);
+                }
+              }}
               onClick={() => onSelect(sig.id)}
             >
               <td className="rank">{i + 1}</td>
+              <td className="sig">
+                <HangName profile={profile} sig={sig} filter={filter} />
+              </td>
               <td
                 className="num time"
                 title={`${formatPercentOfTotal(durationOf(sig), totalDuration ?? profile.totalDuration)} of total hang time`}
@@ -156,18 +169,12 @@ export function HangTable({
                   </span>
                 )}
               </td>
-              <td className="sig">
-                <HangName profile={profile} sig={sig} filter={filter} />
-              </td>
             </tr>
           );
         })}
         {remaining > 0 && (
           <tr className="footer">
             <td className="rank" />
-            <td className="num time">{formatSeconds(totals.duration)}</td>
-            <td className="num count">{formatCount(totals.count)}</td>
-            <td className="trend" />
             <td>
               <button className="link more" onClick={() => setLimit((n) => n + PAGE)}>
                 Show {Math.min(PAGE, remaining)} more
@@ -175,6 +182,9 @@ export function HangTable({
               · {remaining.toLocaleString()} of{" "}
               {signatures.length.toLocaleString()} not shown
             </td>
+            <td className="num time">{formatSeconds(totals.duration)}</td>
+            <td className="num count">{formatCount(totals.count)}</td>
+            <td className="trend" />
           </tr>
         )}
       </tbody>

@@ -25,9 +25,9 @@ export interface Investigation {
 export const INVESTIGATIONS: Investigation[] = [
   {
     id: "increases",
-    label: "Credible increases",
+    label: "Sustained increases",
     blurb:
-      "Hangs whose last 7 days rose against the 7 before, with enough observed days and volume to back it, ranked by the time they added per day.",
+      "Tracked hang time rose across two sufficiently observed weeks, including the typical day. Ranked by added time; partial stack coverage can still affect the comparison.",
     narrowing: { trend: "increase" },
     needsHistory: true,
   },

@@ -30,17 +30,11 @@ export function HangName({ profile, sig, filter }: HangNameProps) {
   return (
     <>
       <span className="hang-title">
-        {sig.knownBug ? (
-          <BugLink bug={sig.knownBug} />
-        ) : (
-          <>
-            {title}
-            {activity && <span className="hang-activity"> {activity}</span>}
-          </>
-        )}
+        {title}
+        {activity && <span className="hang-activity"> {activity}</span>}
       </span>
       <span className="hang-sub">
-        {sig.knownBug && <span className="hang-sub-title">{title} · </span>}
+        {sig.knownBug && <span className="hang-sub-title"><BugLink bug={sig.knownBug} /> · </span>}
         <Highlight text={frameLabel(leaf)} needle={filter} />
         {caller && (
           <span className="hang-caller" title="The Firefox code that made this call">
@@ -64,8 +58,7 @@ function BugLink({ bug }: { bug: KnownBug }) {
         onClick={(e) => e.stopPropagation()}
       >
         Bug {bug.id}
-      </a>{" "}
-      {bug.summary}
+      </a>
     </>
   );
 }

@@ -384,7 +384,7 @@ export function Guide() {
             <Item name="Investigations">
               The saved investigations from Top Hangs as a queue: how many hangs each
               finds on this build and their share of its hang time.{" "}
-              <em>Credible increases</em> also shows the hang time they added per day.
+              <em>Sustained increases</em> also shows the tracked hang time they added per day.
             </Item>
             <Item name="About this data">
               What the numbers cover: the days the history has data for and how much
@@ -449,7 +449,7 @@ export function Guide() {
             </Item>
             <Item name="History">
               The hang's daily time or count across the window, one bar per day.
-              For a bug that covers several stacks, each bar is the bug total split
+              For a bug that covers several stacks, each bar is its tracked subset split
               into its biggest stacks, with the rest summed as <em>Other</em>, so you
               can see which stack is driving a change. Hover a bar for each part and
               the day's total. Tick{" "}

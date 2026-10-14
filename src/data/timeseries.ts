@@ -237,6 +237,22 @@ export class TimeseriesIndex {
     this.boundTo = profile;
   }
 
+  /** Current-build coverage without constructing hundreds of historical day arrays. */
+  coverageForSignature(signature: HangSignature): ResolvedSeries["coverage"] {
+    const stacks = memberStackTotals(signature);
+    let totalMs = 0;
+    let coveredMs = 0;
+    let coveredStacks = 0;
+    for (const stack of stacks) {
+      totalMs += stack.ms;
+      if (this.shapeByStack.has(stack.key)) {
+        coveredMs += stack.ms;
+        coveredStacks++;
+      }
+    }
+    return { stacks: coveredStacks, totalStacks: stacks.length, share: totalMs > 0 ? coveredMs / totalMs : 0 };
+  }
+
   /**
    * A signature's daily series on the bound build, or null when none of its
    * stacks is tracked. Requires `bind`.
