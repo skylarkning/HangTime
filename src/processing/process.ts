@@ -16,6 +16,7 @@
 
 import type { FramePair, FuncIndex, Profile, Thread } from "@/data/schema";
 import { canonicalKey, canonicalKeyFromFrames } from "./signatureKey";
+import { buildFrameTable, classifyStack, type HangKind } from "@/data/hangAreas";
 import type {
   AnnotationStats,
   HangSignature,
@@ -27,6 +28,17 @@ import type {
 
 /** Maps a bug `[bhr:...]` signature substring to its bug. */
 export type BugMap = Map<string, KnownBug>;
+
+/** Placeholder until a signature's final stack is classified. */
+const UNCLASSIFIED: HangKind = {
+  mechanism: "unknown",
+  mechanismFrame: -1,
+  area: null,
+  areaFrame: -1,
+  activity: null,
+  activityFrame: -1,
+  callerFrame: -1,
+};
 
 /** Pick the thread to analyze: the main-process Gecko thread, else the first. */
 function pickThread(profile: Profile): Thread | undefined {
@@ -260,6 +272,7 @@ export function buildSignatures(
       platformMs: platform ? { [platform]: duration } : {},
       affectedClients: 0,
       knownBug: bug,
+      kind: UNCLASSIFIED,
     };
     signatures.push(sig);
     bySignature.set(stackKey, sig);
@@ -278,6 +291,13 @@ export function buildSignatures(
   }
 
   const affected = attachAffectedClients(profile, signatures, funcNames, libNames);
+
+  // Classified once the representative stacks are final: merging can swap a
+  // signature's representative for a longer-running sample.
+  const frameTable = buildFrameTable(funcNames, libNames);
+  for (const sig of signatures) {
+    sig.kind = classifyStack(sig.frameKeys, frameTable, libNames);
+  }
 
   // Stack key -> the displayed signature it belongs to, so clicking a group
   // member (which may be a stack folded into a bug row) can select it.
@@ -303,6 +323,7 @@ export function buildSignatures(
     leafGroupByKey: buildLeafGroupLookup(profile, thread, funcNames, libNames),
     groupsByKey: buildResolvedGroups(profile, thread, funcNames, libNames),
     sigIdByKey,
+    frameTable,
   };
 }
 

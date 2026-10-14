@@ -7,13 +7,25 @@ import type { Metric } from "@/data/timeseries";
 import { HangTable } from "@/components/HangTable";
 import { DetailPane } from "@/components/DetailPane";
 import { GroupMemberTable } from "@/components/GroupMemberTable";
-import { formatCount, formatSeconds } from "@/format";
+import { formatCount, formatPercentOfTotal, formatSeconds, formatShare } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
 import { memberStacks } from "@/processing/signatureKey";
 import { LoadingProgress } from "@/components/LoadingProgress";
 import { BuildBar } from "@/components/BuildBar";
 import { PLATFORMS, platformLabel, type Platform } from "@/data/platforms";
 import type { HangSignature } from "@/processing/types";
+import {
+  CONTEXTS,
+  MECHANISMS,
+  NO_AREA,
+  areaLabel,
+  hasContext,
+  inArea,
+  type AreaFilter,
+  type ContextId,
+  type MechanismId,
+} from "@/data/hangAreas";
+import { byArea, byMechanism } from "@/data/areaBreakdown";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -73,6 +85,18 @@ export function Explorer() {
     return { duration, count };
   }, [platform, query.data]);
 
+  // The area and mechanism filters list what this build (on this platform)
+  // actually has, largest first, with each one's share of the hang time.
+  const measures = useMemo(() => ({ durationOf, countOf }), [durationOf, countOf]);
+  const areaRows = useMemo(
+    () => (query.data ? byArea(query.data.signatures, measures) : []),
+    [query.data, measures],
+  );
+  const mechanismRows = useMemo(
+    () => (query.data ? byMechanism(query.data.signatures, measures) : []),
+    [query.data, measures],
+  );
+
   const filtered = useMemo(() => {
     if (!query.data) {
       return [];
@@ -80,6 +104,16 @@ export function Explorer() {
     let sigs = filterSignatures(query.data, state.filter);
     if (platform) {
       sigs = sigs.filter((s) => countOf(s) > 0);
+    }
+    const { area, mechanism, context } = state;
+    if (area) {
+      sigs = sigs.filter((s) => inArea(s.kind, area));
+    }
+    if (mechanism) {
+      sigs = sigs.filter((s) => s.kind.mechanism === mechanism);
+    }
+    if (context) {
+      sigs = sigs.filter((s) => hasContext(s.annotationStats, s.count, context));
     }
     if (state.trend !== "all") {
       sigs = sigs.filter((s) => {
@@ -89,7 +123,32 @@ export function Explorer() {
     }
     const value = metric === "count" ? countOf : durationOf;
     return [...sigs].sort((a, b) => value(b) - value(a));
-  }, [query.data, state.filter, state.trend, trendById, metric, platform, countOf, durationOf]);
+  }, [
+    query.data,
+    state.filter,
+    state.trend,
+    state.area,
+    state.mechanism,
+    state.context,
+    trendById,
+    metric,
+    platform,
+    countOf,
+    durationOf,
+  ]);
+
+  // Narrowed by anything but the platform, the summary counts what is shown.
+  const narrowed =
+    !!state.filter || !!state.area || !!state.mechanism || !!state.context || state.trend !== "all";
+  const shownTotals = useMemo(() => {
+    let duration = 0;
+    let count = 0;
+    for (const sig of filtered) {
+      duration += durationOf(sig);
+      count += countOf(sig);
+    }
+    return { duration, count };
+  }, [filtered, durationOf, countOf]);
 
   const selected = useMemo(() => {
     if (!query.data || !state.selected) {
@@ -151,6 +210,15 @@ export function Explorer() {
           </div>
         )}
         <div className="filter-bar">
+          <AreaFilters
+            area={state.area}
+            mechanism={state.mechanism}
+            context={state.context}
+            areaRows={areaRows}
+            mechanismRows={mechanismRows}
+            disabled={!!group}
+            onChange={update}
+          />
           <input
             type="text"
             placeholder="Filter by function or library name…"
@@ -227,9 +295,31 @@ export function Explorer() {
           ) : (
             <span className="summary">
               <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
-              <strong>{formatSeconds(platformTotals?.duration ?? profile.totalDuration)}</strong>{" "}
-              s · <strong>{formatCount(platformTotals?.count ?? profile.totalCount)}</strong> hangs
+              <strong>
+                {formatSeconds(
+                  narrowed
+                    ? shownTotals.duration
+                    : (platformTotals?.duration ?? profile.totalDuration),
+                )}
+              </strong>{" "}
+              s ·{" "}
+              <strong>
+                {formatCount(
+                  narrowed ? shownTotals.count : (platformTotals?.count ?? profile.totalCount),
+                )}
+              </strong>{" "}
+              hangs
               {platform && <> on {platformLabel(platform)}</>}
+              {narrowed && (
+                <>
+                  {" "}
+                  ({formatPercentOfTotal(
+                    shownTotals.duration,
+                    platformTotals?.duration ?? profile.totalDuration,
+                  )}{" "}
+                  of hang time)
+                </>
+              )}
             </span>
           )}
         </div>
@@ -267,6 +357,113 @@ export function Explorer() {
         activeGroup={state.group}
         onShowGroup={(key) => update({ group: key })}
       />
+    </div>
+  );
+}
+
+/**
+ * The area, mechanism and context filters: the three ways a hang is described
+ * (see data/hangAreas.ts), so "main-thread file I/O" or "everything in fonts"
+ * is one choice away.
+ */
+function AreaFilters({
+  area,
+  mechanism,
+  context,
+  areaRows,
+  mechanismRows,
+  disabled,
+  onChange,
+}: {
+  area: AreaFilter | null;
+  mechanism: MechanismId | null;
+  context: ContextId | null;
+  areaRows: { key: AreaFilter; label: string; ms: number }[];
+  mechanismRows: { key: MechanismId; label: string; ms: number }[];
+  disabled: boolean;
+  onChange: (patch: {
+    area?: AreaFilter | null;
+    mechanism?: MechanismId | null;
+    context?: ContextId | null;
+  }) => void;
+}) {
+  const total = areaRows.reduce((sum, row) => sum + row.ms, 0);
+  const share = (ms: number) => formatShare(ms, total);
+  // Keep the current choice listed even when nothing in view matches it.
+  const withCurrent = <K extends string>(
+    rows: { key: K; label: string; ms: number }[],
+    current: K | null,
+    label: (key: K) => string,
+  ) =>
+    current && !rows.some((row) => row.key === current)
+      ? [...rows, { key: current, label: label(current), ms: 0 }]
+      : rows;
+  const title = disabled
+    ? "A group's stacks are listed one by one, so this doesn't apply to them"
+    : undefined;
+  const areaName = (key: AreaFilter) => areaLabel(key === NO_AREA ? null : key);
+
+  return (
+    <div className="area-filters">
+      <label className="control" title={title ?? "Show only hangs in one area of the browser"}>
+        Area
+        <select
+          value={area ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ area: e.target.value === "all" ? null : (e.target.value as AreaFilter) })
+          }
+        >
+          <option value="all">All</option>
+          {withCurrent(areaRows, area, areaName).map((row) => (
+            <option key={row.key} value={row.key}>
+              {row.label} ({share(row.ms)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label
+        className="control"
+        title={title ?? "Show only hangs stuck in one way: file I/O, a lock wait, sync IPC..."}
+      >
+        Mechanism
+        <select
+          value={mechanism ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({
+              mechanism: e.target.value === "all" ? null : (e.target.value as MechanismId),
+            })
+          }
+        >
+          <option value="all">All</option>
+          {withCurrent(mechanismRows, mechanism, (key) => MECHANISMS[key].label).map((row) => (
+            <option key={row.key} value={row.key}>
+              {row.label} ({share(row.ms)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label
+        className="control"
+        title={title ?? "Show only hangs where most reports carry this flag"}
+      >
+        When
+        <select
+          value={context ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ context: e.target.value === "all" ? null : (e.target.value as ContextId) })
+          }
+        >
+          <option value="all">Any time</option>
+          {(Object.keys(CONTEXTS) as ContextId[]).map((key) => (
+            <option key={key} value={key}>
+              {CONTEXTS[key].label}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }

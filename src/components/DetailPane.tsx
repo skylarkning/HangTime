@@ -33,6 +33,7 @@ import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
 import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
+import { HangSummary, evidenceMarks } from "./HangSummary";
 import { memberStacks } from "@/processing/signatureKey";
 
 interface DetailPaneProps {
@@ -62,6 +63,19 @@ export function DetailPane({
   useEffect(() => {
     paneRef.current?.scrollTo(0, 0);
   }, [signature?.id]);
+
+  // A summary's evidence link scrolls the stack to its frame and flashes it.
+  const [flash, setFlash] = useState<number | null>(null);
+  useEffect(() => {
+    if (flash === null) {
+      return;
+    }
+    paneRef.current
+      ?.querySelector(`[data-depth="${flash}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timer = setTimeout(() => setFlash(null), 1500);
+    return () => clearTimeout(timer);
+  }, [flash]);
 
   if (!signature) {
     return <div className="detail-empty">Select a hang to see its stack.</div>;
@@ -96,9 +110,15 @@ export function DetailPane({
         </div>
       )}
 
-      {/* The stack first: it says what the hang is, and everything below is
-          about how often and where it happens. */}
-      <StackSection frames={frames} filter={filter} />
+      {/* What the stack shows, then the stack: together they say what the hang
+          is, and everything below is about how often and where it happens. */}
+      <HangSummary signature={signature} frames={frames} onJump={setFlash} />
+      <StackSection
+        frames={frames}
+        filter={filter}
+        marks={evidenceMarks(signature.kind)}
+        flash={flash}
+      />
 
       <TimeseriesChart index={timeseries} signature={signature} />
 
@@ -132,7 +152,18 @@ export function DetailPane({
   );
 }
 
-function StackSection({ frames, filter }: { frames: Frame[]; filter: string }) {
+function StackSection({
+  frames,
+  filter,
+  marks,
+  flash,
+}: {
+  frames: Frame[];
+  filter: string;
+  /** Depth -> the summary rows that point at that frame. */
+  marks: Map<number, string[]>;
+  flash: number | null;
+}) {
   const resolver = useSourceResolver().data;
   return (
     <div className="detail-section">
@@ -162,10 +193,26 @@ function StackSection({ frames, filter }: { frames: Frame[]; filter: string }) {
       <div className="stack-trace">
         {frames.length === 0 && <div className="frame">(empty stack)</div>}
         {frames.map((frame, i) => (
-          <div key={i} className={`frame${isOwnCode(frame) ? "" : " system"}`}>
+          <div
+            key={i}
+            data-depth={i}
+            className={[
+              "frame",
+              isOwnCode(frame) ? "" : "system",
+              marks.has(i) ? "marked" : "",
+              flash === i ? "flash" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             <span className="idx">{i}</span>
             <span className="name">
               <Highlight text={frame.funcName} needle={filter} />
+              {marks.get(i)?.map((mark) => (
+                <span key={mark} className="frame-mark">
+                  {mark}
+                </span>
+              ))}
             </span>
             {frame.libName && (
               <span className="lib">

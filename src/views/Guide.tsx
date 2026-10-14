@@ -16,8 +16,9 @@ const SECTIONS: { id: string; title: string }[] = [
   { id: "about", title: "What is HangTime?" },
   { id: "quick-start", title: "Quick start" },
   { id: "top-hangs-page", title: "The Top Hangs page" },
-  { id: "overview-page", title: "The Overview page" },
+  { id: "areas-page", title: "The Areas page" },
   { id: "hang-detail", title: "Reading a hang's details" },
+  { id: "describing", title: "How a hang is described" },
   { id: "trends", title: "How trends are worked out" },
   { id: "annotations", title: "Hang annotations" },
   { id: "builds", title: "Builds and shareable links" },
@@ -208,7 +209,7 @@ function Item({ name, children }: { name: ReactNode; children: ReactNode }) {
 
 export function Guide() {
   const { search } = useLocation();
-  const overview = { pathname: "/overview", search };
+  const areas = { pathname: "/areas", search };
   const topHangs = { pathname: "/top-hangs", search };
 
   return (
@@ -261,25 +262,25 @@ export function Guide() {
           <p>A first pass through the dashboard, about five minutes:</p>
           <ol className="guide-steps">
             <li>
-              <b>Get the big picture.</b> Open <Link to={overview}>Overview</Link>.
-              The four numbers at the top tell you how much hanging there was on
-              this build and whether it's rising.
+              <b>Get the big picture.</b> Open <Link to={areas}>Areas</Link> to see
+              which parts of the browser, and which kinds of blocking (file I/O,
+              lock waits, synchronous IPC), the build&rsquo;s hang time goes to.
+              Pick a row to list those hangs.
             </li>
             <li>
-              <b>Check what's changed.</b> In <em>Needs attention</em>, look at the{" "}
-              <span className="chip red">Regressions</span> and{" "}
-              <span className="chip blue">New</span> lists. These are usually the
-              best place to start triaging.
+              <b>Check what's changed.</b> In <Link to={topHangs}>Top Hangs</Link>,
+              set <em>Trend</em> to rising or new hangs. These are usually the best
+              place to start triaging.
             </li>
             <li>
-              <b>Open a hang.</b> Click any hang name. It takes you to{" "}
-              <Link to={topHangs}>Top Hangs</Link> with that hang selected and its
-              details on the right.
+              <b>Open a hang.</b> Click any row. Its details open on the right,
+              starting with a <em>Summary</em>: which area of the browser it is in,
+              how the thread was stuck, when it happens, and the frames that show it.
             </li>
             <li>
-              <b>Find the cause.</b> The <em>Stack</em> is at the top of the
-              details. Frame 0 is where the thread was stuck; the frames below it
-              show how it got there.
+              <b>Find the cause.</b> The <em>Stack</em> is next. Frame 0 is where the
+              thread was stuck; the frames below it show how it got there. The
+              frames the summary points at are tagged.
             </li>
             <li>
               <b>Read its history.</b> Below the stack, the <em>History</em> chart
@@ -300,6 +301,18 @@ export function Guide() {
             the right.
           </p>
           <dl className="guide-list">
+            <Item name="Area, Mechanism and When">
+              Narrow the list by how its hangs are described: the part of the
+              browser (<em>Fonts &amp; text</em>, <em>Startup cache</em>), how the
+              thread was stuck (<em>File I/O</em>, <em>Lock wait</em>,{" "}
+              <em>Synchronous IPC</em>), or when it happens (<em>Startup</em>,{" "}
+              <em>User interacting</em>, on most of its reports). Each option shows
+              its share of the build&rsquo;s hang time. See{" "}
+              <button className="link" onClick={() => scrollTo("describing")}>
+                How a hang is described
+              </button>
+              .
+            </Item>
             <Item name="Filter box">
               Type part of a function or library name, for example{" "}
               <code>nsFrame</code> or <code>xul.dll</code>, to keep only the hangs
@@ -332,10 +345,13 @@ export function Guide() {
               </button>
               .
             </Item>
-            <Item name="Hang signature">
-              The <b>leaf frame</b>: the function the thread was in when it hung,
-              and its library. If a bug already covers the hang, the row shows the
-              bug number and summary instead.
+            <Item name="Hang">
+              What the hang is, in two lines. First its description, such as{" "}
+              <em>Startup cache: lock wait</em> during JS module loading. Then, in
+              grey, the <b>leaf frame</b> (the function the thread was in when it
+              was sampled, and its library) and, after <code>←</code>, the Firefox
+              code that called it. If a bug already covers the hang, the first line
+              is the bug number and summary instead.
             </Item>
           </dl>
           <p className="guide-note">
@@ -344,46 +360,28 @@ export function Guide() {
           </p>
         </Section>
 
-        <Section id="overview-page">
+        <Section id="areas-page">
           <p>
-            <Link to={overview}>Overview</Link> is the health summary for one
-            build. Every hang name on it links to that hang's details.
+            <Link to={areas}>Areas</Link> shows where one build&rsquo;s hang time goes.
+            Every row opens Top Hangs narrowed to it, keeping the build and platform.
           </p>
           <dl className="guide-list">
-            <Item name="Hang time">
-              Total seconds threads spent hung on this build, added up across every
-              reported hang. The chip beside it compares the last 7 days with the 7
-              before.
+            <Item name="By area">
+              Each part of the browser&rsquo;s share of the hang time, largest first,
+              with the mechanisms that make up most of it underneath. The last column
+              is how much of that time is in hangs no bug tracks yet.
             </Item>
-            <Item name="Hangs">
-              How many hangs were reported on this build, with the same 7-day
-              comparison.
+            <Item name="By mechanism">
+              The same hang time split by how the thread was stuck, with the areas
+              each mechanism shows up in.
             </Item>
-            <Item name="Distinct signatures">
-              How many different stacks those hangs came from. Many hangs share a
-              few causes, so this is far smaller than the hang count.
+            <Item name="When">
+              Hang time in hangs where most reports were flagged as during startup,
+              during shutdown, while the user was interacting, and so on. A hang can
+              carry several flags, so these don&rsquo;t add up to 100%.
             </Item>
-            <Item name="Tracked by a bug">
-              The share of hang time whose signature already has a Bugzilla bug (a
-              bug whose whiteboard carries a <code>[bhr:…]</code> tag). A low number
-              means lots of hang time nobody has filed yet.
-            </Item>
-            <Item name="Hang volume over time">
-              Daily hang time or count for the tracked top signatures, one bar per
-              day. Use this to see the overall direction, not exact totals. Switch between{" "}
-              <em>ms</em> and <em>count</em>, pick a window (7d to 365d), or drag
-              across the chart to zoom in.
-            </Item>
-            <Item name="Top hangs by time">
-              The eight signatures with the most hang time, with each one's share of
-              the total and its trend. <em>All hangs →</em> opens the full list.
-            </Item>
-            <Item name="Needs attention">
-              Hangs that are rising sharply (<em>regressions</em>) or that have just
-              appeared (<em>new</em>), busiest first.
-            </Item>
-            <Item name="Where hangs happen">
-              The share of hangs from Windows, macOS, Linux and other systems.
+            <Item name="Platform">
+              Work everything out from one platform&rsquo;s share of each hang.
             </Item>
           </dl>
         </Section>
@@ -396,6 +394,13 @@ export function Guide() {
           <dl className="guide-list">
             <Item name="Bugzilla">
               Shown when the hang is tracked by a bug, with a link to it.
+            </Item>
+            <Item name="Summary">
+              The hang&rsquo;s description, then the platform it mostly comes from and
+              the context flags its reports carry, then the evidence: the frame that
+              shows the <em>mechanism</em>, the frame that names the <em>area</em>,
+              the next area out (<em>during</em>), and the Firefox <em>caller</em>.
+              Click a frame to jump to it in the stack, where it is tagged.
             </Item>
             <Item name="Stack">
               Every frame, starting at frame 0, where the thread was stuck, and
@@ -463,6 +468,59 @@ export function Guide() {
               for the full list.
             </Item>
           </dl>
+        </Section>
+
+        <Section id="describing">
+          <p>
+            HangTime describes each hang three ways, so a list of stacks reads as a
+            list of problems. All three are read from the stack&rsquo;s function and
+            library names (the hang data carries no source paths) and from the flags
+            saved with each report. They say where the thread was, as a starting
+            point; they are not a confirmed cause.
+          </p>
+          <dl className="guide-list">
+            <Item name="Mechanism">
+              How the thread was stuck where it was sampled, read from the leaf end
+              of the stack: <em>File I/O</em> (with the operation: open, read,
+              delete, metadata...), <em>Lock wait</em>, <em>Synchronous IPC</em>,{" "}
+              <em>COM call</em>, <em>Registry access</em>, <em>Serialization</em>{" "}
+              (JSON, structured clone), <em>Garbage collection</em>,{" "}
+              <em>Cycle collection</em>, <em>JavaScript execution</em>, a{" "}
+              <em>call into</em> a named system library, or plain <em>CPU work</em>.
+              A lock or memory copy that a nearby frame explains takes that
+              frame&rsquo;s name: a condition-variable wait inside{" "}
+              <code>MessageChannel::WaitForSyncNotify</code> is synchronous IPC.
+              A file operation says where the thread was, not that the disk was
+              slow: antivirus, network drives and locks stall there too.
+            </Item>
+            <Item name="Area">
+              The innermost frame that names a part of the browser: a feature
+              (<em>Session restore</em>, <em>Bookmarks &amp; history</em>), a
+              subsystem (<em>Fonts &amp; text</em>, <em>Startup cache</em>,{" "}
+              <em>Networking</em>, <em>Accessibility</em>), or the OS integration it
+              belongs to (<em>OS shell &amp; taskbar</em>, <em>Text input
+              (IME)</em>). Glue frames (bindings, XPConnect, the event loop, smart
+              pointers) are skipped. Generic layers such as <em>DOM</em> only
+              answer when nothing more specific is on the stack. <em>During</em> is
+              the next different area further out, such as <em>during JS module
+              loading</em>.
+            </Item>
+            <Item name="When">
+              From the annotations: <em>Startup</em>, <em>Shutdown</em>,{" "}
+              <em>User interacting</em>, <em>Paint pending</em>,{" "}
+              <em>Input waiting</em> and <em>Other apps busy (CPU)</em>, as the share
+              of the hang&rsquo;s reports carrying each. A report without a flag is
+              unknown rather than &ldquo;no&rdquo;, so the share is a floor.
+            </Item>
+          </dl>
+          <p className="guide-note">
+            The rules live in <code>src/data/hangAreas.ts</code>. A hang that reads
+            wrong is worth a{" "}
+            <a href={ISSUES_URL} target="_blank" rel="noreferrer">
+              report
+            </a>
+            : most fixes are one line in a rule table.
+          </p>
         </Section>
 
         <Section id="trends">
@@ -554,7 +612,7 @@ export function Guide() {
 
         <Section id="builds">
           <p>
-            <b>Build date</b>, at the top of Top Hangs and Overview, shows which
+            <b>Build date</b>, at the top of Top Hangs and Areas, shows which
             Nightly build you're looking at. Click the date and pick another to see
             an older build. <em>Back to latest build</em> returns to the newest one.
             A build only exists once the daily job has processed it, about four days
