@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useBugs, useProcessedProfile, useTimeseries } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
+import { isLegacyStackId } from "@/state/permalink";
 import { filterSignatures } from "@/processing/select";
 import { computeTrend, trendCategory, type TrendSummary } from "@/data/trend";
 import type { Metric } from "@/data/timeseries";
@@ -163,8 +164,21 @@ export function Explorer() {
     if (!query.data || !state.selected) {
       return null;
     }
-    return query.data.signatures.find((s) => s.id === state.selected) ?? null;
+    // An older link names the hang by its stack's funcTable indices, which
+    // still find it on the build the link was made on.
+    const id = isLegacyStackId(state.selected)
+      ? (query.data.sigIdByKey?.[state.selected] ?? state.selected)
+      : state.selected;
+    return query.data.signatures.find((s) => s.id === id) ?? null;
   }, [query.data, state.selected]);
+
+  // Once an older link has found its hang, put the stable id in the address,
+  // so copying it from there gives a link that works on any build.
+  useEffect(() => {
+    if (selected && state.selected !== selected.id) {
+      update({ selected: selected.id });
+    }
+  }, [selected, state.selected, update]);
 
   if (query.isError) {
     return (
@@ -364,6 +378,7 @@ export function Explorer() {
       <DetailPane
         profile={profile}
         signature={selected}
+        requestedId={state.selected}
         filter={state.filter}
         timeseries={timeseries.data}
         onSelect={(id) => update({ selected: id })}

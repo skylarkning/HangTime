@@ -143,6 +143,8 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
 .detail-pane { overflow-y: auto; padding: 0; background: var(--surface); }
 .detail-empty { color: var(--muted); padding: 40px; text-align: center; }
 .detail-section { border-bottom: 1px solid var(--border); padding: 14px 18px; }
+.detail-link { display: flex; justify-content: flex-end; padding: 8px 18px 0; font-size: 12px; }
+.detail-link + .detail-section { padding-top: 6px; }
 .detail-section h3 {
   font-size: 11px; font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;

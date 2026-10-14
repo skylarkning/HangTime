@@ -396,6 +396,10 @@ export function Guide() {
             bottom:
           </p>
           <dl className="guide-list">
+            <Item name="Copy link">
+              Copies a link to this hang on this build, with the list&apos;s filters.
+              It names the build, so it keeps working after newer builds arrive.
+            </Item>
             <Item name="Bugzilla">
               Shown when the hang is tracked by a bug, with a link to it.
             </Item>
@@ -683,8 +687,11 @@ export function Guide() {
           </p>
           <p>
             Everything you set (build, filter, sort, trend and selected hang) is
-            saved in the page address. <b>Copy the URL to share exactly what you're
-            looking at</b>; whoever opens it sees the same view.
+            saved in the page address, so the URL reopens the same view. To share a
+            hang, use <b>Copy link</b> at the top of its details: the link names the
+            build you're looking at, so it keeps showing that build after newer ones
+            arrive, where a plain URL on the latest build moves on with it. The bug
+            form's dashboard link is made the same way.
           </p>
           <p>
             The first load downloads about 25 MB and processes it in your browser,
