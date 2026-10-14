@@ -228,7 +228,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   }
   if (!series) {
     return (
-      <div className="detail-section">
+      <div className="detail-section" data-section="History">
         <h3>History</h3>
         <p className="muted">
           No timeseries data for this hang — it isn’t in the top tracked
@@ -449,7 +449,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   };
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="History">
       <div className="ts-header">
         <h3>
           History ({dates.length} days)

@@ -142,7 +142,21 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
 /* Detail pane */
 .detail-pane { overflow-y: auto; padding: 0; background: var(--surface); }
 .detail-empty { color: var(--muted); padding: 40px; text-align: center; }
-.detail-section { border-bottom: 1px solid var(--border); padding: 14px 18px; }
+.detail-section {
+  border-bottom: 1px solid var(--border); padding: 14px 18px;
+  scroll-margin-top: 34px; /* clear of the sticky section links */
+}
+/* Links to the pane's sections, pinned to its top while it scrolls. */
+.section-nav {
+  position: sticky; top: 0; z-index: 2; display: flex; gap: 2px 14px; flex-wrap: wrap;
+  padding: 6px 18px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+}
+.section-nav button {
+  background: none; border: none; padding: 0; font: inherit; color: var(--muted);
+  cursor: pointer; white-space: nowrap;
+}
+.section-nav button:hover { color: var(--blue); text-decoration: underline; }
 .detail-section h3 {
   font-size: 11px; font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;
@@ -155,6 +169,11 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
   background: var(--surface-alt); padding: 1px 5px; border-radius: 3px;
 }
 .annotation-list .pct { color: var(--muted); }
+.annotation-summary { display: flex; flex-wrap: wrap; gap: 4px 0; font-size: 12.5px; }
+.annotation-summary > span:not(:last-child)::after {
+  content: "·"; margin: 0 7px; color: var(--muted-2);
+}
+.annotation-toggle { display: block; margin: 6px 0 8px; font-size: 12px; }
 
 .muted { color: var(--muted); font-size: 12px; margin-top: 8px; }
 .ts-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -261,6 +280,17 @@ table.hangs .trend { width: 4.5em; }
 .frame:hover .frame-links a { color: var(--blue); }
 .frame-links a:hover { text-decoration: underline; }
 .frame.system .name { color: var(--muted); }
+/* A run of frames a focused stack leaves out; click to show them. */
+.frame.frame-run {
+  width: 100%; background: var(--surface-alt); border: none; border-bottom: 1px solid var(--border);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.frame.frame-run .name {
+  color: var(--muted-2); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11.5px; font-style: italic;
+}
+.frame.frame-run:hover .name { color: var(--blue); }
+.stack-toggles { display: flex; gap: 12px; font-size: 12px; }
 /* Frames the summary points at, tagged with what they're evidence of. */
 .frame.marked { background: #f6f9ff; }
 .frame.flash { background: #fff3a0; transition: background 0.3s; }

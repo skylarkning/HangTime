@@ -1309,6 +1309,25 @@ export function buildFrameTable(funcNames: string[], libNames: string[]): FrameT
   return { mechanism, area, flags };
 }
 
+/**
+ * What kind of frame a function is, for summing up frames a view leaves out:
+ * glue (bindings, the event loop, smart pointers), an OS library, Firefox
+ * code, or a frame with no symbol.
+ */
+export function frameRole(
+  table: FrameTable,
+  funcIndex: number,
+): "glue" | "system" | "firefox" | "unknown" {
+  const flag = table.flags[funcIndex] ?? FLAG_SENTINEL;
+  if (flag & FLAG_SENTINEL) {
+    return "unknown";
+  }
+  if (flag & FLAG_PLUMBING) {
+    return "glue";
+  }
+  return flag & (FLAG_MOZILLA | FLAG_JS) ? "firefox" : "system";
+}
+
 // -- Classifying a stack ------------------------------------------------------
 
 export interface HangKind {

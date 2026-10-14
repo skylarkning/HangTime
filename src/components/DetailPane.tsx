@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   Frame,
   HangSignature,
@@ -35,6 +35,7 @@ import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
 import { HangSummary, evidenceMarks } from "./HangSummary";
 import { memberStacks } from "@/processing/signatureKey";
+import { frameRole, hangContext, type FrameTable } from "@/data/hangAreas";
 
 interface DetailPaneProps {
   profile: ProcessedProfile;
@@ -94,6 +95,7 @@ export function DetailPane({
 
   return (
     <div className="detail-pane" ref={paneRef}>
+      <SectionNav paneRef={paneRef} />
       {signature.knownBug && (
         <div className="detail-section">
           <h3>Bugzilla</h3>
@@ -114,10 +116,12 @@ export function DetailPane({
           is, and everything below is about how often and where it happens. */}
       <HangSummary signature={signature} frames={frames} onJump={setFlash} />
       <StackSection
+        key={`stack:${signature.id}`}
         frames={frames}
         filter={filter}
         marks={evidenceMarks(signature.kind)}
         flash={flash}
+        table={profile.frameTable}
       />
 
       <TimeseriesChart index={timeseries} signature={signature} />
@@ -146,86 +150,315 @@ export function DetailPane({
         timeseries={timeseries}
       />
 
-      <AnnotationStatsSection signature={signature} />
+      <AnnotationStatsSection key={`annotations:${signature.id}`} signature={signature} />
 
     </div>
   );
 }
 
+/**
+ * A row of links to the sections this hang has, so a long pane (a 60-frame
+ * stack pushes the history and filing several screens down) is one click from
+ * any part. Sections mark themselves with `data-section`; reading them from
+ * the page keeps this in step with whichever ones rendered.
+ */
+function SectionNav({ paneRef }: { paneRef: React.RefObject<HTMLDivElement> }) {
+  const [sections, setSections] = useState<string[]>([]);
+  useLayoutEffect(() => {
+    const found = [
+      ...(paneRef.current?.querySelectorAll<HTMLElement>("[data-section]") ?? []),
+    ].map((el) => el.dataset.section ?? "");
+    setSections((prev) => (prev.join("|") === found.join("|") ? prev : found));
+  });
+  if (sections.length < 3) {
+    return null;
+  }
+  return (
+    <nav className="section-nav" aria-label="Sections">
+      {sections.map((name) => (
+        <button
+          key={name}
+          onClick={() =>
+            paneRef.current
+              ?.querySelector(`[data-section="${name}"]`)
+              ?.scrollIntoView({ block: "start", behavior: "smooth" })
+          }
+        >
+          {name}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** Stacks up to this long are always shown whole. */
+const FOCUS_MIN_FRAMES = 16;
+/** A focused stack shows at least this many leaf frames... */
+const LEAF_ROWS_MIN = 8;
+/** ...and runs on to an evidence frame up to this depth. */
+const LEAF_ROWS_MAX = 14;
+
+/**
+ * The stack. A long one opens focused: the leaf frames, where the hang
+ * actually is, then only the frames the summary points at or the filter
+ * matches, with each run in between folded into one row that says how many
+ * frames it holds and what kind. "Show all" brings back every frame.
+ *
+ * Remounted per hang (keyed by the caller), so a new selection starts focused.
+ */
 function StackSection({
   frames,
   filter,
   marks,
   flash,
+  table,
 }: {
   frames: Frame[];
   filter: string;
   /** Depth -> the summary rows that point at that frame. */
   marks: Map<number, string[]>;
   flash: number | null;
+  table: FrameTable;
 }) {
   const resolver = useSourceResolver().data;
+  const [showAll, setShowAll] = useState(false);
+  // Frames brought back one run at a time, or by a summary link.
+  const [revealed, setRevealed] = useState<ReadonlySet<number>>(() => new Set());
+  // A summary link to a folded frame shows it at once (so the pane can scroll
+  // to it in the same render) and keeps it shown once the flash has faded.
+  useEffect(() => {
+    if (flash !== null) {
+      setRevealed((prev) => (prev.has(flash) ? prev : new Set(prev).add(flash)));
+    }
+  }, [flash]);
+
+  const focusable = frames.length > FOCUS_MIN_FRAMES;
+  const focused = useMemo(() => {
+    if (!focusable) {
+      return frames.map(() => true);
+    }
+    let leafEnd = LEAF_ROWS_MIN - 1;
+    for (const depth of marks.keys()) {
+      if (depth < LEAF_ROWS_MAX) {
+        leafEnd = Math.max(leafEnd, depth);
+      }
+    }
+    const matches = frameMatcher(filter);
+    return unfoldShortRuns(
+      frames.map((frame, i) => i <= leafEnd || marks.has(i) || matches(frame)),
+    );
+  }, [frames, focusable, marks, filter]);
+  const visible = showAll
+    ? focused.map(() => true)
+    : unfoldShortRuns(focused.map((v, i) => v || revealed.has(i) || i === flash));
+  const hidden = visible.filter((v) => !v).length;
+  // Whether anything beyond the focused view is showing, to offer going back.
+  const expanded = showAll || visible.some((v, i) => v && !focused[i]);
+
+  // Visible frames as rows, each folded run between them as a single row.
+  const rows: React.ReactNode[] = [];
+  for (let i = 0; i < frames.length; ) {
+    if (visible[i]) {
+      rows.push(
+        <FrameRow
+          key={i}
+          depth={i}
+          frame={frames[i]}
+          filter={filter}
+          marks={marks.get(i)}
+          flash={flash === i}
+          resolver={resolver}
+        />,
+      );
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < frames.length && !visible[i]) {
+      i++;
+    }
+    const run = frames.slice(start, i);
+    rows.push(
+      <button
+        key={`run-${start}`}
+        className="frame frame-run"
+        onClick={() =>
+          setRevealed((prev) => {
+            const next = new Set(prev);
+            for (let d = start; d < start + run.length; d++) {
+              next.add(d);
+            }
+            return next;
+          })
+        }
+        title={`Show frames ${start} to ${start + run.length - 1}`}
+      >
+        <span className="idx">…</span>
+        <span className="name">
+          {run.length} {run.length === 1 ? "frame" : "frames"}: {describeRun(run, table)}
+        </span>
+      </button>,
+    );
+  }
+
   return (
-    <div className="detail-section">
-      <h3>
-        Stack ({frames.length} frames)
-        <InfoTip label="Stack">
-          Frame 0 is where the thread was stuck; each frame below called the one
-          above. Firefox&rsquo;s own code is in normal text, system libraries are
-          dimmed.
-          <span className="eg">
-            <b>Searchfox</b> and <b>GitHub</b> open a JavaScript frame&rsquo;s file at
-            its line. For a C++ frame, <b>Searchfox</b> searches for the function,
-            which leads to its definition: the hang data doesn&rsquo;t carry C++ file
-            and line numbers yet (
-            <a
-              href="https://bugzilla.mozilla.org/show_bug.cgi?id=2081894"
-              target="_blank"
-              rel="noreferrer"
-            >
-              bug 2081894
-            </a>
-            ). Links show the current source, so a line can
-            have moved if the file changed since this build.
+    <div className="detail-section" data-section="Stack">
+      <div className="ts-header">
+        <h3>
+          Stack ({frames.length} frames)
+          <InfoTip label="Stack">
+            Frame 0 is where the thread was stuck; each frame below called the one
+            above. Firefox&rsquo;s own code is in normal text, system libraries are
+            dimmed. A long stack opens on the frames that matter: the leaf end, the
+            frames the summary points at, and any the filter matches. Click a folded
+            row, or <b>Show all</b>, for the rest.
+            <span className="eg">
+              <b>Searchfox</b> and <b>GitHub</b> open a JavaScript frame&rsquo;s file at
+              its line. For a C++ frame, <b>Searchfox</b> searches for the function,
+              which leads to its definition: the hang data doesn&rsquo;t carry C++ file
+              and line numbers yet (
+              <a
+                href="https://bugzilla.mozilla.org/show_bug.cgi?id=2081894"
+                target="_blank"
+                rel="noreferrer"
+              >
+                bug 2081894
+              </a>
+              ). Links show the current source, so a line can
+              have moved if the file changed since this build.
+            </span>
+          </InfoTip>
+        </h3>
+        {focusable && (
+          <span className="stack-toggles">
+            {hidden > 0 && (
+              <button className="link" onClick={() => setShowAll(true)}>
+                Show all {frames.length} frames
+              </button>
+            )}
+            {expanded && (
+              <button
+                className="link"
+                onClick={() => {
+                  setShowAll(false);
+                  setRevealed(new Set());
+                }}
+              >
+                Show focused
+              </button>
+            )}
           </span>
-        </InfoTip>
-      </h3>
+        )}
+      </div>
       <div className="stack-trace">
         {frames.length === 0 && <div className="frame">(empty stack)</div>}
-        {frames.map((frame, i) => (
-          <div
-            key={i}
-            data-depth={i}
-            className={[
-              "frame",
-              isOwnCode(frame) ? "" : "system",
-              marks.has(i) ? "marked" : "",
-              flash === i ? "flash" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <span className="idx">{i}</span>
-            <span className="name">
-              <Highlight text={frame.funcName} needle={filter} />
-              {marks.get(i)?.map((mark) => (
-                <span key={mark} className="frame-mark">
-                  {mark}
-                </span>
-              ))}
-            </span>
-            {frame.libName && (
-              <span className="lib">
-                <Highlight text={frame.libName} needle={filter} />
-              </span>
-            )}
-            <FrameLinks frame={frame} resolver={resolver} />
-          </div>
-        ))}
+        {rows}
       </div>
     </div>
   );
 }
+
+function FrameRow({
+  depth,
+  frame,
+  filter,
+  marks,
+  flash,
+  resolver,
+}: {
+  depth: number;
+  frame: Frame;
+  filter: string;
+  marks: string[] | undefined;
+  flash: boolean;
+  resolver?: SourceResolver;
+}) {
+  return (
+    <div
+      data-depth={depth}
+      className={[
+        "frame",
+        isOwnCode(frame) ? "" : "system",
+        marks ? "marked" : "",
+        flash ? "flash" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <span className="idx">{depth}</span>
+      <span className="name">
+        <Highlight text={frame.funcName} needle={filter} />
+        {marks?.map((mark) => (
+          <span key={mark} className="frame-mark">
+            {mark}
+          </span>
+        ))}
+      </span>
+      {frame.libName && (
+        <span className="lib">
+          <Highlight text={frame.libName} needle={filter} />
+        </span>
+      )}
+      <FrameLinks frame={frame} resolver={resolver} />
+    </div>
+  );
+}
+
+/**
+ * Whether a frame matches the list's text filter, with the list's rule: all
+ * lower-case matches any case (see `stackMatcher`).
+ */
+function frameMatcher(filter: string): (frame: Frame) => boolean {
+  if (!filter) {
+    return () => false;
+  }
+  const caseInsensitive = filter.toLowerCase() === filter;
+  const has = (value: string) =>
+    caseInsensitive ? value.toLowerCase().includes(filter) : value.includes(filter);
+  return (frame) => has(frame.funcName) || has(frame.libName);
+}
+
+/** What a folded run of frames mostly is, so skipping it is an informed choice. */
+function describeRun(run: Frame[], table: FrameTable): string {
+  const counts: Record<string, number> = {};
+  for (const frame of run) {
+    const role = frameRole(table, frame.funcIndex);
+    // Unsymbolicated frames read as glue: neither says what the code does.
+    const name = RUN_ROLES[role === "unknown" ? "glue" : role];
+    counts[name] = (counts[name] ?? 0) + 1;
+  }
+  const [first, second] = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return first[1] >= run.length * 0.7 || !second
+    ? first[0]
+    : `mostly ${first[0]}, some ${second[0]}`;
+}
+
+/** Runs shorter than this are shown: folding them saves no space. */
+const MIN_RUN = 3;
+
+function unfoldShortRuns(visible: boolean[]): boolean[] {
+  const out = [...visible];
+  for (let i = 0; i < out.length; ) {
+    if (out[i]) {
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < out.length && !out[i]) {
+      i++;
+    }
+    if (i - start < MIN_RUN) {
+      out.fill(true, start, i);
+    }
+  }
+  return out;
+}
+
+const RUN_ROLES = {
+  glue: "event loop and glue",
+  system: "system libraries",
+  firefox: "Firefox code",
+};
 
 /** Source links for one stack frame, or nothing for a system library frame. */
 function FrameLinks({ frame, resolver }: { frame: Frame; resolver?: SourceResolver }) {
@@ -318,7 +551,7 @@ function FileBugSection({
 
   if (signature.knownBug) {
     return (
-      <div className="detail-section">
+      <div className="detail-section" data-section="File a bug">
         <h3>File a bug</h3>
         <p className="muted">
           Already tracked by Bug {signature.knownBug.id}.{" "}
@@ -332,7 +565,7 @@ function FileBugSection({
   }
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="File a bug">
       <h3>
         File a bug
         <InfoTip label="File a bug">
@@ -624,7 +857,7 @@ function LeafGroupSection({
   );
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Near-duplicates">
       <h3>
         Near-duplicate group
         <InfoTip label="Near-duplicate group">
@@ -829,7 +1062,7 @@ function PlatformSection({
   }
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Platform">
       <h3>
         Platform
         <InfoTip label="Platform">
@@ -914,7 +1147,7 @@ function AffectedClientsSection({
   const active: AffectedWindowKey = window !== "today" && !hasCrossDay ? "today" : window;
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Clients">
       <div className="ts-header">
         <h3>
           Affected clients
@@ -1030,7 +1263,13 @@ function WindowAffected({
   );
 }
 
+/**
+ * The hang's annotations: one line of the context they add up to, then every
+ * key and value, with the share of reports carrying it, on demand. Remounted
+ * per hang, so a new selection starts folded.
+ */
 function AnnotationStatsSection({ signature }: { signature: HangSignature }) {
+  const [open, setOpen] = useState(false);
   const entries = Object.entries(signature.annotationStats).sort(
     (a, b) => b[1].totalCount - a[1].totalCount,
   );
@@ -1042,53 +1281,80 @@ function AnnotationStatsSection({ signature }: { signature: HangSignature }) {
       style: "percent",
       minimumFractionDigits: 1,
     });
+  const share = (n: number) =>
+    n.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 1 });
+  const contexts = hangContext(signature.annotationStats, signature.count);
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Annotations">
       <h3>
         Hang annotations
         <InfoTip label="Hang annotations">
           Context flags Firefox recorded with the hang (e.g.{" "}
           <code>UserInteracting</code> = the user was actively interacting). The
-          percentage is the share of this signature’s hangs carrying that flag.
+          percentage is the share of this signature&rsquo;s reports carrying that flag.
+          <span className="eg">
+            A report without a flag is unknown rather than &ldquo;no&rdquo;: Firefox
+            only records a flag when it is set, and older builds record fewer of
+            them. So <code>UserInteracting 60%</code> means at least 60% of reports
+            came while the user was interacting.
+          </span>
         </InfoTip>
       </h3>
-      <ul className="annotation-list">
-        {entries.map(([key, stat]) => {
-          const values = Object.entries(stat.values);
-          let detail: React.ReactNode;
-          if (values.length === 1 && values[0][0] === "true") {
-            detail = `${pct(values[0][1])} (${values[0][1].toLocaleString()} hangs)`;
-          } else if (values.length === 1) {
-            detail = (
-              <>
-                {pct(values[0][1])} ({values[0][1].toLocaleString()} hangs:{" "}
-                <code>{values[0][0]}</code>)
-              </>
+      <p className="annotation-summary">
+        {contexts.length > 0 ? (
+          contexts.map((c) => (
+            <span key={c.key} title={`${share(c.share)} of reports carry ${c.key}`}>
+              {c.label} {share(c.share)}
+            </span>
+          ))
+        ) : (
+          <span className="summary-none">No context flags set</span>
+        )}
+      </p>
+      <button className="link annotation-toggle" onClick={() => setOpen((o) => !o)}>
+        {open
+          ? "Hide the annotations"
+          : `Show all ${entries.length} annotation${entries.length === 1 ? "" : "s"}`}
+      </button>
+      {open && (
+        <ul className="annotation-list">
+          {entries.map(([key, stat]) => {
+            const values = Object.entries(stat.values);
+            let detail: React.ReactNode;
+            if (values.length === 1 && values[0][0] === "true") {
+              detail = `${pct(values[0][1])} (${values[0][1].toLocaleString()} hangs)`;
+            } else if (values.length === 1) {
+              detail = (
+                <>
+                  {pct(values[0][1])} ({values[0][1].toLocaleString()} hangs:{" "}
+                  <code>{values[0][0]}</code>)
+                </>
+              );
+            } else {
+              detail = (
+                <>
+                  {pct(stat.totalCount)} ({stat.totalCount.toLocaleString()} hangs:{" "}
+                  {values
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([v, c], idx) => (
+                      <span key={v}>
+                        {idx > 0 && ", "}
+                        {c.toLocaleString()} <code>{v}</code>
+                      </span>
+                    ))}
+                  )
+                </>
+              );
+            }
+            return (
+              <li key={key}>
+                <code>{key}</code> <span className="pct">{detail}</span>
+              </li>
             );
-          } else {
-            detail = (
-              <>
-                {pct(stat.totalCount)} ({stat.totalCount.toLocaleString()} hangs:{" "}
-                {values
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([v, c], idx) => (
-                    <span key={v}>
-                      {idx > 0 && ", "}
-                      {c.toLocaleString()} <code>{v}</code>
-                    </span>
-                  ))}
-                )
-              </>
-            );
-          }
-          return (
-            <li key={key}>
-              <code>{key}</code> <span className="pct">{detail}</span>
-            </li>
-          );
-        })}
-      </ul>
+          })}
+        </ul>
+      )}
     </div>
   );
 }
