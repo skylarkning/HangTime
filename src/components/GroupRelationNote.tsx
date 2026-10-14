@@ -5,6 +5,7 @@
  */
 
 import { useMemo } from "react";
+import { InfoTip } from "./InfoTip";
 import type { ProcessedProfile, ResolvedGroup } from "@/processing/types";
 import {
   RELATION_LABELS,
@@ -34,7 +35,10 @@ export function GroupRelationNote({
       <span className={`chip ${TONE[explanation.relation]}`}>
         {RELATION_LABELS[explanation.relation]}
       </span>
-      <span>{relationSentence(explanation, group.memberCount)}</span>
+      <InfoTip label="Group relationship">
+        {relationSentence(explanation, group.memberCount)}
+        <span className="eg">This describes stack similarity, not a confirmed shared root cause.</span>
+      </InfoTip>
     </div>
   );
 }

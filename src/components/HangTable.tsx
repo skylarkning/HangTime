@@ -72,15 +72,10 @@ export function HangTable({
             <span className="column-heading"><span>Hang</span>
             <InfoTip label="Hang">
               Tracked hangs use their Bugzilla number and title. Other titles
-              use a shortened function name from the representative stack,
-              with its frame number. Generic waits, allocation and memory
-              operations prefer a distinctive caller when available. Class and
-              namespace names are kept; full arguments remain in Stack.
-              <span className="eg">
-                e.g. <code>mozilla::scache::StartupCache::GetBuffer</code>, with
-                “Startup cache: lock wait” below. A function title identifies
-                a frame; the stack description does not establish a cause.
-              </span>
+              use the original function symbol from frame 0 (the recorded leaf),
+              including its arguments. Titles do not substitute an inferred caller.
+              Search matches functions and libraries anywhere in the stack, so a
+              matching frame may be deeper than the title frame.
             </InfoTip>
             </span>
           </th>

@@ -33,6 +33,8 @@ export function investigationLink(
   }
   if (state.group) {
     params.set("group", state.group);
+    if (state.member) params.set("member", state.member);
+    if (state.original) params.set("original", state.original);
   }
   if (state.sort !== "time") {
     params.set("sort", state.sort);

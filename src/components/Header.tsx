@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { useState } from "react";
 import bhrLogo from "@/assets/bhr-logo.png";
 import { setTheme, useTheme } from "@/state/theme";
 
@@ -24,6 +25,8 @@ interface HeaderProps {
 export function Header({ thread }: HeaderProps) {
   const location = useLocation();
   const theme = useTheme();
+  const [tabsAnimated, setTabsAnimated] = useState(false);
+  const activeTab = Math.max(0, TABS.findIndex(tab => tab.to === location.pathname));
 
   return (
     <header className="top">
@@ -33,6 +36,10 @@ export function Header({ thread }: HeaderProps) {
         <span className="subtitle">Background Hang Reporter Dashboard</span>
       </div>
       <nav className="tabs" aria-label="Main navigation">
+        <span className="tab-selection" aria-hidden="true"
+          style={{ transform: `translateX(calc(${activeTab * 100}% + var(--tab-gap) * ${activeTab}))` }}>
+          <span key={activeTab} className="tab-glass-surface" data-animate={tabsAnimated || undefined} />
+        </span>
         {TABS.map((tab) =>
           tab.to ? (
             // Preserve the current query string (thread/date/…) across tabs.
@@ -41,6 +48,7 @@ export function Header({ thread }: HeaderProps) {
               to={{ pathname: tab.to, search: location.search }}
               className={location.pathname === tab.to ? "active" : ""}
               aria-current={location.pathname === tab.to ? "page" : undefined}
+              onClick={() => setTabsAnimated(true)}
             >
               {tab.label}
             </Link>
@@ -75,7 +83,7 @@ export function Header({ thread }: HeaderProps) {
           Feedback ↗
         </a>
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">V1.2.1</span>
+        <span className="version">V1.2.2</span>
       </div>
     </header>
   );

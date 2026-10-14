@@ -62,6 +62,9 @@ export interface ViewState {
   platform: Platform | null;
   /** Restrict the list to one near-duplicate group (its group key), or null. */
   group: string | null;
+  /** Exact group member and original baseline, by stable stack identity. */
+  member: string | null;
+  original: string | null;
   /** Restrict the list to one area of the browser ("none": unattributed). */
   area: AreaFilter | null;
   /** Restrict the list to one mechanism (file I/O, lock wait, ...). */
@@ -84,6 +87,8 @@ export function useViewState() {
     trend: parseTrend(params.get("trend")),
     platform: isPlatform(params.get("platform")) ? (params.get("platform") as Platform) : null,
     group: params.get("group"),
+    member: params.get("member"),
+    original: params.get("original"),
     area: isAreaFilter(params.get("area")) ? (params.get("area") as AreaFilter) : null,
     mechanism: isMechanism(params.get("mechanism"))
       ? (params.get("mechanism") as MechanismId)

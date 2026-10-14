@@ -362,12 +362,10 @@ export function Guide() {
             </Item>
             <Item name="Hang">
               Tracked hangs use their Bugzilla number and title. Other hangs use
-              a shortened, searchable function name and its frame number first;
-              class and namespace names stay, arguments are omitted. Generic
-              waits and memory operations prefer a distinctive caller when one
-              is available. The second line describes the area and mechanism;
-              tracked hangs also show their representative function. A representative frame
-              identifies the stack, not a confirmed root cause.
+              the original function symbol from frame 0, including arguments.
+              No inferred caller is substituted. The second line describes the
+              area and mechanism; tracked hangs also show their leaf function.
+              Search matches any frame in the stack, not only the title.
             </Item>
           </dl>
           <p className="guide-note">
@@ -429,8 +427,8 @@ export function Guide() {
               and link directly to Bugzilla.
             </Item>
             <Item name="Summary">
-              The same Bugzilla title or short function name as the list, with a link to its
-              representative frame in Stack. The stack description follows,
+              The same Bugzilla title or original leaf function as the list, with a link to its
+              leaf frame in Stack. The stack description follows,
               then the platform it mostly comes from and
               the context flags its reports carry, then the evidence: the frame that
               shows the <em>mechanism</em>, the frame that names the <em>area</em>,
@@ -476,15 +474,21 @@ export function Guide() {
               stacks is tracked has no history.
             </Item>
             <Item name="Near-duplicate group">
-              Hangs that are really the same problem but look different at the very
-              top of the stack (one stuck in a lock, another in <code>memcpy</code>
-              ) are grouped by their first meaningful Firefox frame.{" "}
+              Stacks that share a meaningful frame can be related even when their
+              raw stopping frames differ. This grouping is a lead to investigate,
+              not proof of a shared cause.{" "}
               <em>Show … stacks in the list</em> narrows the hang list on the left
               to that group, one row per stack, each led by the frame that sets it
               apart from the others, with its own description and its share of the
               group&rsquo;s time; <em>Show all hangs</em> in the banner above the list
-              goes back. <em>Compare stacks</em> lists the group's variants here,
-              so you can tick two and compare them side by side.
+              goes back. Clicking a row inspects that exact stack on the right,
+              including its own time and count, even if several rows belong to
+              one bug. The original is pinned as blue A. Use the left checkboxes
+              to add up to three candidates, then <em>Compare stacks</em> to align
+              all four. Letters, colors and checkmarks match across the list,
+              inspector and comparison. Removing a candidate preserves the
+              other colors. Per-stack platform and context breakdowns are not
+              available, so the inspector does not reuse the bug’s aggregate data.
               <br />
               Sharing a frame isn&rsquo;t sharing a cause, so a label says how alike
               the stacks are. <em>Same bug</em>: one bug already tracks them all.{" "}

@@ -29,6 +29,10 @@ import {
 } from "@/data/investigations";
 import type { BugFilter, ViewState } from "@/state/useViewState";
 import { byArea, byMechanism } from "@/data/areaBreakdown";
+import { groupMemberIds, originalGroupMember, toggleComparison } from "@/processing/groupInspection";
+import { GroupInspector } from "@/components/GroupInspector";
+import { StackDiff, type DiffSide } from "@/components/StackDiff";
+import { shortSymbol } from "@/frames";
 import { GroupRelationNote } from "@/components/GroupRelationNote";
 
 export function Explorer() {
@@ -148,6 +152,36 @@ export function Explorer() {
     return query.data.signatures.find((s) => s.id === id) ?? null;
   }, [query.data, state.selected]);
 
+  const ids = useMemo(() => group && query.data ? groupMemberIds(query.data, group) : new Map<string, string>(), [group, query.data]);
+  const original = group?.members.find(member => ids.get(member.key) === state.original)
+    ?? (group ? originalGroupMember(group, selected) : undefined);
+  const inspectedMember = group && (state.member || state.selected)
+    ? (state.member ? group.members.find(member => ids.get(member.key) === state.member) ?? null : original ?? null)
+    : null;
+  const compareScope = `${state.thread}:${query.data?.date}:${state.group}:${original?.key}`;
+  const [comparison, setComparison] = useState<{scope: string; slots: (string | null)[]}>({scope: "", slots: []});
+  const compareKeys = comparison.scope === compareScope ? comparison.slots : [original?.key ?? null, null, null, null];
+  const toggleCompare = (key: string) => setComparison(previous => ({scope: compareScope,
+    slots: toggleComparison(previous.scope === compareScope ? previous.slots : [original?.key ?? null,null,null,null], key),
+  }));
+  const [diffScope, setDiffScope] = useState<string | null>(null);
+  const sides: DiffSide[] = compareKeys.flatMap((key, slot) => {
+    const member = group?.members.find(member => member.key === key);
+    if (!member || !query.data) return [];
+    const symbol = member.firstUniqueFrame?.[0] ?? query.data.funcNames[member.frameKeys[0]];
+    const rank = [...group!.members].sort((a,b) => metric === "count" ? b.count-a.count : b.ms-a.ms).findIndex(m => m.key === key) + 1;
+    return [{frameKeys: member.frameKeys, slot, label: `Stack #${rank} · ${shortSymbol(symbol)}`}];
+  });
+  const showGroup = (key: string | null) => {
+    if (!key) { update({group: null, member: null, original: null}); return; }
+    const next = query.data?.groupsByKey?.[key];
+    if (!next || !query.data) return;
+    const nextIds = groupMemberIds(query.data, next);
+    const member = originalGroupMember(next, selected);
+    const id = member ? nextIds.get(member.key) ?? null : null;
+    update({group: key, member: id, original: id});
+  };
+
   // Once an older link has found its hang, put the stable id in the address,
   // so copying it from there gives a link that works on any build.
   useEffect(() => {
@@ -187,10 +221,10 @@ export function Explorer() {
   return (
     <div className="explorer-workspace">
       <BuildBar date={profile.date} />
-      <div className={`explorer${selected || state.selected ? " has-selection" : ""}`}>
+      <div className={`explorer${(group ? inspectedMember : selected || state.selected) ? " has-selection" : ""}`}>
         <div className="list-pane">
           <div className="pane-heading">
-            <div><span className="eyebrow">Investigation workspace</span><h1>Top Hangs</h1></div>
+            <h1>Top Hangs</h1>
             <div className="pane-actions">
               <label className="control">
                 Sort by
@@ -221,9 +255,9 @@ export function Explorer() {
             <div className="group-banner">
               {group ? (
                 <>
-                  <span className="group-banner-label">Near-duplicate group</span>
+                  <span className="group-banner-label">Near-duplicates</span>
                   <span className="group-banner-name" title={group.displayName}>
-                    {group.displayName}
+                    {shortSymbol(group.displayName)}
                   </span>
                   <span className="group-badge">
                     {group.memberCount.toLocaleString()} stacks
@@ -233,11 +267,16 @@ export function Explorer() {
               ) : (
                 <span>That near-duplicate group isn’t in this build.</span>
               )}
-              <button className="btn secondary" onClick={() => update({ group: null })}>
+              <button className="btn secondary" onClick={() => showGroup(null)}>
                 Show all hangs
               </button>
             </div>
           )}
+          {group && <div className="group-comparison-controls">
+            <span>Original A + up to 3 candidates · <b>{sides.length}/4</b></span>
+            <button className="btn secondary" disabled={sides.length < 2} onClick={() => setDiffScope(compareScope)}>Compare {sides.length > 1 ? `${sides.length} stacks` : "stacks"}</button>
+            {sides.length > 1 && <button className="link" onClick={() => setComparison({scope: compareScope, slots:[original?.key ?? null,null,null,null]})}>Clear candidates</button>}
+          </div>}
           <div className={`filter-bar${showFilters ? " filters-expanded" : ""}`} id="hang-filters">
             <AreaFilters
               narrowing={narrowing}
@@ -368,8 +407,11 @@ export function Explorer() {
                 group={group}
                 filter={state.filter}
                 sort={metric === "count" ? "count" : "time"}
-                selectedId={state.selected}
-                onSelect={(id) => update({ selected: id })}
+                selectedKey={inspectedMember?.key ?? null}
+                originalKey={original?.key ?? ""}
+                compareKeys={compareKeys}
+                onToggleCompare={toggleCompare}
+                onSelect={(key) => update({selected: profile.sigIdByKey?.[key] ?? null, member: ids.get(key) ?? null, original: original ? ids.get(original.key) ?? null : null})}
               />
             ) : (
               <HangTable
@@ -377,7 +419,7 @@ export function Explorer() {
                 signatures={filtered}
                 filter={state.filter}
                 selectedId={state.selected}
-                onSelect={(id) => update({ selected: id })}
+                onSelect={(id) => update({ selected: id, member: null, original: null })}
                 trendById={trendById}
                 durationOf={durationOf}
                 countOf={countOf}
@@ -388,16 +430,24 @@ export function Explorer() {
             )}
           </div>
         </div>
+        {group ? <GroupInspector
+          key={`${compareScope}:${inspectedMember?.key ?? "none"}`}
+          profile={profile} group={group} member={inspectedMember}
+          memberId={inspectedMember ? ids.get(inspectedMember.key) ?? "" : ""}
+          originalKey={original?.key ?? ""} slot={compareKeys.indexOf(inspectedMember?.key ?? "")}
+          filter={state.filter} sort={state.sort}
+          onBack={() => update({selected:null,member:null,original:original ? ids.get(original.key) ?? null : null})}
+          onOpenHang={(id) => update({group:null,member:null,original:null,selected:id})}
+        /> : (
         <DetailPane
           profile={profile}
           signature={selected}
           requestedId={state.selected}
           filter={state.filter}
           timeseries={timeseries.data}
-          onSelect={(id) => update({ selected: id })}
           onBack={() => update({ selected: null })}
           activeGroup={state.group}
-          onShowGroup={(key) => update({ group: key })}
+          onShowGroup={showGroup}
           onFilter={(text) =>
             // Everything the text matches, so the list agrees with what a bug tag
             // would fold in: drop the other narrowing.
@@ -413,6 +463,8 @@ export function Explorer() {
             })
           }
         />
+        )}
+        {group && diffScope === compareScope && sides.length >= 2 && <StackDiff profile={profile} sides={sides} onClose={() => setDiffScope(null)} />}
       </div>
     </div>
   );

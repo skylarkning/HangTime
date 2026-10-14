@@ -1,19 +1,9 @@
 /** Frame display helpers shared by the table and detail pane. */
 
 import type { Frame } from "@/processing/types";
-import type { HangKind } from "@/data/hangAreas";
-
-const PRIMITIVE_MECHANISMS = new Set([
-  "lock-wait", "blocking-wait", "idle-wait", "thread-join", "sleep",
-  "memory-copy", "memory-alloc", "file-io",
-]);
-
-/** A searchable stack landmark, never a claim about the root cause. */
-export function representativeFrameDepth(kind: HangKind, frames: Frame[]): number {
-  const candidates = PRIMITIVE_MECHANISMS.has(kind.mechanism)
-    ? [kind.callerFrame, kind.mechanismFrame, 0]
-    : [kind.mechanismFrame, kind.callerFrame, 0];
-  return candidates.find((depth) => depth >= 0 && !!frames[depth]?.funcName) ?? -1;
+/** Match the original dashboard: identify a stack by its recorded leaf frame. */
+export function leafFrameDepth(frames: Frame[]): number {
+  return frames.length ? 0 : -1;
 }
 
 /** Keep qualified names, templates and operator(), omitting call arguments. */

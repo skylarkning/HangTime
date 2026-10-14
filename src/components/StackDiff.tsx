@@ -1,130 +1,57 @@
-/**
- * Side-by-side diff of two near-duplicate hang stacks. The two stacks share a
- * leaf frame and a common trunk, then diverge; aligning them from the leaf
- * downward makes the branch point and everything past it easy to see. Shared
- * frames are dimmed; the first divergent frame and everything below it are
- * highlighted. Rendered as a modal so there's room for two full stacks.
- */
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import type { ProcessedProfile } from "@/processing/types";
+import { alignStackKeys } from "@/processing/stackAlignment";
 
-import { useEffect } from "react";
-import type { Frame, ProcessedProfile } from "@/processing/types";
-import { resolveFrames } from "@/processing/select";
-import { frameLabel } from "@/frames";
-
-interface DiffRow {
-  a: Frame | null;
-  b: Frame | null;
-  same: boolean;
-}
-
-const sameFrame = (x: Frame, y: Frame) =>
-  x.funcName === y.funcName && x.libName === y.libName;
-
-/**
- * Longest-common-subsequence alignment of two frame lists (leaf -> root). Shared
- * frames line up on the same row even when one stack has an inserted or removed
- * frame; frames unique to one side sit alone with the other cell blank. This
- * keeps a one-frame insertion from cascading into a wall of false differences.
- */
-function diffFrames(a: Frame[], b: Frame[]): DiffRow[] {
-  const m = a.length;
-  const n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () =>
-    new Array<number>(n + 1).fill(0),
-  );
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      dp[i][j] = sameFrame(a[i], b[j])
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-  const rows: DiffRow[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < m && j < n) {
-    if (sameFrame(a[i], b[j])) {
-      rows.push({ a: a[i], b: b[j], same: true });
-      i++;
-      j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      rows.push({ a: a[i], b: null, same: false });
-      i++;
-    } else {
-      rows.push({ a: null, b: b[j], same: false });
-      j++;
-    }
-  }
-  while (i < m) rows.push({ a: a[i++], b: null, same: false });
-  while (j < n) rows.push({ a: null, b: b[j++], same: false });
-  return rows;
-}
-
-/** One side of the diff: a stack (funcTable indices, leaf -> root) and a label. */
 export interface DiffSide {
   frameKeys: number[];
   label: string;
+  slot: number;
 }
-
-interface StackDiffProps {
-  profile: ProcessedProfile;
-  a: DiffSide;
-  b: DiffSide;
-  onClose: () => void;
-}
-
-export function StackDiff({ profile, a, b, onClose }: StackDiffProps) {
+export function StackDiff({profile, sides, onClose}: {
+  profile: ProcessedProfile; sides: DiffSide[]; onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const previous = document.activeElement as HTMLElement | null;
+    close.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); }
+      if (event.key === "Tab") {
+        const targets = dialog.current?.querySelectorAll<HTMLElement>('button, [tabindex="0"]');
+        if (!targets?.length) return;
+        const first = targets[0], last = targets[targets.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); previous?.focus(); };
   }, [onClose]);
-
-  const framesA = resolveFrames(profile, a.frameKeys);
-  const framesB = resolveFrames(profile, b.frameKeys);
-  const rows = diffFrames(framesA, framesB);
-  const shared = rows.filter((r) => r.same).length;
-  const differing = rows.length - shared;
-
-  return (
-    <div className="diff-backdrop" onClick={onClose}>
-      <div className="diff-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="diff-head">
-          <h3>Compare stacks</h3>
-          <button className="diff-close" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
-        <div className="diff-sub">
-          Aligned by longest common subsequence, leaf first. {shared} shared
-          frame{shared === 1 ? "" : "s"} dimmed; {differing} frame
-          {differing === 1 ? "" : "s"} unique to one stack highlighted.
-        </div>
-        <table className="diff-table">
-          <thead>
-            <tr>
-              <th className="diff-mark" />
-              <th>
-                A · <span className="diff-distinct">{a.label}</span>
-              </th>
-              <th>
-                B · <span className="diff-distinct">{b.label}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={r.same ? "diff-same" : "diff-changed"}>
-                <td className="diff-mark">{r.same ? "" : "≠"}</td>
-                <td>{r.a ? frameLabel(r.a) : ""}</td>
-                <td>{r.b ? frameLabel(r.b) : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+  const same = (a: number, b: number) => profile.funcNames[a] === profile.funcNames[b] && profile.libNames[a] === profile.libNames[b];
+  const rows = alignStackKeys(sides.map(side => side.frameKeys), same);
+  const depths = sides.map(() => 0);
+  return createPortal(<div className="diff-backdrop" onClick={onClose}>
+    <div className="diff-modal multi-diff" ref={dialog} role="dialog" aria-modal="true" aria-label="Compare stacks" onClick={e => e.stopPropagation()}>
+      <div className="diff-head"><h3>Compare {sides.length} stacks</h3>
+        <button ref={close} className="diff-close" onClick={onClose} aria-label="Close comparison">×</button></div>
+      <p className="diff-sub">Aligned against Original A, leaf first. Shared frames are dimmed;
+        differences use each stack’s color. A dash means no corresponding frame.
+        Insertions align before the next original frame.</p>
+      <div className="diff-scroll" role="region" aria-label="Aligned stack frames" tabIndex={0}><table className="diff-table multi-diff-table">
+        <thead><tr>{sides.map(side => <th key={side.slot} data-slot={side.slot}>
+          <span className="comparison-badge">{String.fromCharCode(65 + side.slot)}{side.slot === 0 ? " · Original" : ""}</span> {side.label}
+        </th>)}</tr></thead>
+        <tbody>{rows.map((row, i) => {
+          const original = row[0];
+          const shared = original !== null && row.every(value => value !== null && same(value, original));
+          return <tr key={i}>{row.map((key, column) => <td key={sides[column].slot} data-slot={sides[column].slot}
+            className={shared ? "comparison-shared" : "comparison-different"}>
+            {key === null ? <span className="muted">—</span> : <><span className="comparison-depth">{depths[column]++}</span> {profile.funcNames[key]} <span className="muted">{profile.libNames[key]}</span></>}
+          </td>)}</tr>;
+        })}</tbody>
+      </table></div>
     </div>
-  );
+  </div>, document.body);
 }

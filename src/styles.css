@@ -116,13 +116,11 @@ header.top {
   display: block;
 }
 .brand .subtitle { font-size: 11px; color: var(--muted); font-weight: 400; letter-spacing: 0; margin-left: 5px; }
-nav.tabs { display: flex; gap: 3px; padding: 4px; border-radius: 12px; background: var(--control-bg); margin-left: auto; }
 nav.tabs button, nav.tabs a {
   background: none; border: none; font: inherit; color: var(--muted);
   padding: 7px 19px; cursor: pointer; border-radius: 9px; font-size: 12px;
   display: flex; align-items: center; gap: 6px; text-decoration: none;
 }
-nav.tabs .active { color: var(--text); background: var(--selected-tab); box-shadow: 0 1px 4px #00000012; font-weight: 600; }
 nav.tabs button:disabled { color: var(--muted-2); cursor: default; }
 nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
 .header-right { margin-left: auto; display: flex; align-items: center; gap: 14px; color: var(--muted); }
@@ -162,7 +160,7 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
 .list-pane { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border-radius: 20px; box-shadow: var(--card-shadow); overflow: hidden; }
 .pane-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 16px 24px 10px; gap: 10px 16px; }
 .pane-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.pane-heading h1 { font-size: 27px; font-weight: 650; line-height: 1.3; letter-spacing: -0.9px; margin-top: 3px; }
+.pane-heading h1 { font-size: 27px; font-weight: 650; line-height: 1.3; letter-spacing: -0.9px; }
 .filter-toggle { display: inline-flex; gap: 13px; align-items: center; color: var(--text); background: var(--surface-alt); border: none; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .filter-toggle.active { background: var(--blue-light); color: var(--blue); }
 .filter-bar:not(.filters-expanded) .advanced-control { display: none; }
@@ -270,6 +268,11 @@ table.hangs tr.footer .more { font-style: normal; font-weight: 600; }
   position: sticky; top: 0; z-index: 2; display: flex; gap: 2px 11px; flex-wrap: wrap;
   padding: 6px 12px; background: var(--header-bg); border-radius: 10px; flex-shrink: 0;
   font-size: 11.5px;
+}
+/* Opaque backing masks scrolling cards at the rounded corners and side gutters. */
+.section-nav::before {
+  content: ""; position: absolute; inset: 0 -2px; z-index: -1;
+  background: var(--header-bg); pointer-events: none;
 }
 .section-nav button {
   background: none; border: none; padding: 0; font: inherit; color: var(--muted);
@@ -882,7 +885,7 @@ a.queue-row:hover { background: var(--surface-alt); }
 .group-banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 8px 16px; font-size: 12.5px;
-  background: var(--blue-light); border-bottom: 1px solid var(--blue-border);
+  background: var(--blue-light); border-bottom: 1px solid var(--blue-border); margin-bottom: 10px;
 }
 .group-banner-label {
   font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
@@ -890,16 +893,16 @@ a.queue-row:hover { background: var(--surface-alt); }
 }
 .group-banner-name {
   font-family: var(--mono); font-size: 12px; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30%; flex: 1 1 100px;
 }
 .group-banner .btn { margin-left: auto; padding: 4px 10px; }
 /* Why a group exists, under its name: a relationship label and a sentence. */
 .group-relation {
-  order: 10; flex: 1 0 100%; display: flex; align-items: baseline; gap: 8px;
+  display: inline-flex; align-items: center; gap: 5px;
   font-size: 12px; color: var(--muted); line-height: 1.45;
 }
 .group-relation .chip { flex: none; }
-.detail-section .group-relation { margin-top: 8px; }
+.group-relation .infotip-btn { margin-left: 0; }
 .member-diff { font-family: var(--mono); font-size: 12px; }
 .member-diff .lib { font-weight: 400; color: var(--muted); }
 .member-same { font-weight: 400; font-style: italic; color: var(--muted); }
@@ -1032,7 +1035,6 @@ table.hangs .num.share { width: 4em; color: var(--muted); }
   .ts-header { flex-wrap: wrap; gap: 10px; }
   .platform-row { grid-template-columns: 55px minmax(25px, 1fr) 38px 77px 30px; gap: 5px; font-size: 11px; }
   .report-actions, .group-actions { flex-wrap: wrap; }
-  .group-relation { flex-wrap: wrap; }
   .areas-page { padding: 0 6px 14px; gap: 8px; }
   .areas-intro { padding: 8px 4px 0; gap: 16px; }
   .areas-intro h1 { font-size: 34px; }
@@ -1052,4 +1054,223 @@ table.hangs .num.share { width: 4em; color: var(--muted); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* The original and comparison candidates retain the same color in every view. */
+:root { --compare-a: #1769c2; --compare-b: #ad5700; --compare-c: #087861; --compare-d: #8651c2; }
+:root[data-theme="dark"] { --compare-a: #64a8ff; --compare-b: #ffb366; --compare-c: #65d6b0; --compare-d: #c9a0ff; }
+[data-slot="0"] { --stack-color: var(--compare-a); }
+[data-slot="1"] { --stack-color: var(--compare-b); }
+[data-slot="2"] { --stack-color: var(--compare-c); }
+[data-slot="3"] { --stack-color: var(--compare-d); }
+[data-slot="4"] { --stack-color: var(--muted); }
+.comparison-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 5px; margin-right: 5px; border-radius: 4px; font: 600 10px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--stack-color); background: color-mix(in srgb, var(--stack-color) 12%, var(--surface)); white-space: nowrap; }
+.group-comparison-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 12px; padding: 0 24px 10px; font-size: 11px; color: var(--muted); }
+.group-comparison-controls .btn { padding: 4px 8px; font-size: 11px; }
+.group-stack-table .compare-column { width: 28px; text-align: center; padding-inline: 4px; }
+.stack-compare-checkbox { appearance: none; display: inline-grid; place-items: center; width: 15px; height: 15px; margin: 0; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface); cursor: pointer; vertical-align: middle; }
+.stack-compare-checkbox:checked { background: var(--stack-color); border-color: var(--stack-color); }
+.stack-compare-checkbox:checked::after { content: "✓"; color: var(--surface); font: 700 12px/1 sans-serif; }
+.stack-compare-checkbox:disabled { cursor: default; }
+.stack-compare-checkbox:disabled:not(:checked) { opacity: .35; }
+.stack-compare-checkbox:focus-visible { outline: 2px solid var(--stack-color, var(--blue)); outline-offset: 2px; }
+.group-stack-row[data-slot] td { background: color-mix(in srgb, var(--stack-color) 7%, var(--surface)); }
+.group-stack-row[data-slot] td:first-child { box-shadow: inset 3px 0 var(--stack-color); }
+.group-stack-row.inspecting td { border-bottom-color: var(--stack-color); }
+.group-stack-row.inspecting .sig { box-shadow: inset -3px 0 var(--stack-color); }
+.group-stack-row .comparison-badge { float: left; }
+.group-inspector-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 16px; border-radius: 14px; background: var(--surface); border-left: 3px solid var(--stack-color); font-size: 11px; color: var(--muted); }
+.group-inspector-toolbar .inspector-back { margin-left: auto; }
+@media (max-width: 900px) {
+  .group-inspector-toolbar .inspector-back { display: inline-block; }
+}
+.multi-diff { max-width: 1440px; overflow: hidden; display: flex; flex-direction: column; }
+.diff-scroll { overflow: auto; min-height: 0; }
+.multi-diff-table { table-layout: fixed; width: max-content; min-width: 100%; }
+.multi-diff-table th, .multi-diff-table td { width: 300px; min-width: 260px; max-width: 360px; }
+.multi-diff-table th { position: sticky; top: 0; z-index: 1; border-top: 3px solid var(--stack-color); }
+.multi-diff-table .comparison-different { background: color-mix(in srgb, var(--stack-color) 10%, var(--surface)); border-left: 2px solid var(--stack-color); color: var(--text); }
+.multi-diff-table .comparison-shared { color: var(--muted); }
+.comparison-depth { color: var(--stack-color); font-size: 10px; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .group-comparison-controls { padding-inline: 16px; }
+  .group-stack-table .num.share { display: none; }
+  .group-banner { gap: 6px; }
+  .group-banner-name { max-width: 40%; }
+}
+
+/* Clear glass controls: static reflections, with movement only on interaction.
+   Deliberately no backdrop-filter, SVG distortion, pointer loop or will-change. */
+:root {
+  --control-radius: 999px;
+  --glass-hover-shadow: rgba(38, 57, 84, .19);
+  --glass-fill: rgba(255, 255, 255, .24);
+  --glass-edge: rgba(145, 161, 181, .25);
+  --glass-hi: rgba(255, 255, 255, .98);
+  --glass-lower-edge: rgba(122, 143, 168, .18);
+  --glass-shadow: rgba(38, 57, 84, .065);
+  --glass-accent: rgba(0, 113, 227, .07);
+  --glass-reflection: linear-gradient(145deg, rgba(255,255,255,.86), rgba(255,255,255,.16) 38%, rgba(217,232,250,.07) 62%, rgba(255,255,255,.62));
+  --glass-button-shadow: inset 0 1px 0 var(--glass-hi), inset 0 -1px 0 var(--glass-lower-edge), inset 0 0 0 1px var(--glass-edge), 0 1px 3px var(--glass-shadow);
+}
+:root[data-theme="dark"] {
+  --glass-hover-shadow: rgba(0, 0, 0, .48);
+  --glass-fill: rgba(225, 239, 255, .035);
+  --glass-edge: rgba(221, 236, 255, .19);
+  --glass-hi: rgba(255, 255, 255, .32);
+  --glass-lower-edge: rgba(0, 0, 0, .2);
+  --glass-shadow: rgba(0, 0, 0, .18);
+  --glass-accent: rgba(100, 168, 255, .1);
+  --glass-reflection: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.025) 38%, rgba(165,207,255,.015) 62%, rgba(255,255,255,.09));
+}
+:root :is(select, .btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill, .build-pop-reset, .active-filters button, .section-nav button, .section-nav .detail-link) {
+  border-radius: var(--control-radius);
+  background-color: var(--glass-fill);
+  background-image: var(--glass-reflection);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-button-shadow);
+  transition: transform 160ms cubic-bezier(.2,.8,.2,1), opacity 140ms ease, background-color 200ms ease, border-color 200ms ease, box-shadow 200ms ease, color 200ms ease;
+}
+:root :is(select, .btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill, .build-pop-reset, .active-filters button, .section-nav button, .section-nav .detail-link):not(:disabled):not(.disabled):active {
+  transform: scale(.97);
+}
+/* Navigation controls have room around labels without inflating content actions. */
+:root .section-nav { gap: 4px 7px; align-items: center; }
+:root .section-nav :is(button, .detail-link) { border-radius: var(--control-radius); padding: 4px 10px; text-decoration: none; }
+:root .section-nav .detail-link { color: var(--blue); }
+:root .btn:not(.secondary):not(.disabled) {
+  background-color: var(--button-bg);
+  background-image: linear-gradient(145deg, rgba(255,255,255,.2), transparent 50%, rgba(255,255,255,.08));
+}
+:root :is(.filter-toggle.active, .active-filters button) { background-color: var(--glass-accent); }
+:root :is(button:disabled, select:disabled, .btn.disabled) { opacity: .45; }
+:root .btn:hover { filter: none; }
+/* Moving sheen is a small composited layer, rather than an animated gradient. */
+:root :is(.btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill) {
+  position: relative; overflow: hidden; isolation: isolate;
+}
+:root :is(.btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill)::after {
+  content: ""; position: absolute; inset: -60% -30%; pointer-events: none;
+  background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,.24) 50%, transparent 60%);
+  transform: translateX(-80%); opacity: 0;
+  transition: transform 300ms ease, opacity 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  :root :is(.btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill):not(:disabled):not(.disabled):hover::after {
+    transform: translateX(80%); opacity: 1;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  :root :is(select, .btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill, .build-pop-reset, .active-filters button, .section-nav button, .section-nav .detail-link):not(:disabled):not(.disabled):hover {
+    box-shadow: inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-edge), 0 3px 8px var(--glass-hover-shadow);
+  }
+}
+/* Content remains flat: disclosures, evidence, info icons and source links are not chrome. */
+:root .detail-section :is(.link, .btn, .frame-links a, .summary-disclosure, .frame-ref, .frame-run) {
+  background: none; box-shadow: none; transform: none; border-radius: 0;
+}
+:root .detail-section :is(.btn, .frame-links a) {
+  border: 0; padding: 0; color: var(--blue); text-decoration: underline;
+}
+:root .detail-section :is(.btn, .frame-links a)::after { content: none; }
+/* Explicit actions inside content cards retain compact button affordances. */
+:root .detail-section :is(.report-actions .btn, .frame-links a) {
+  background-color: var(--glass-fill); background-image: var(--glass-reflection);
+  border: 1px solid var(--glass-edge); border-radius: var(--control-radius);
+  box-shadow: var(--glass-button-shadow); color: var(--blue); text-decoration: none;
+  transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+:root .detail-section .report-actions .btn {
+  padding: 5px 11px; position: relative; isolation: isolate; overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.7), transparent 52%), var(--glass-fill);
+  border-color: var(--glass-edge);
+  box-shadow: inset 0 1px 1px var(--glass-hi), inset 0 -1px 2px var(--glass-lower-edge), 0 2px 5px var(--glass-shadow);
+}
+:root .detail-section .report-actions .btn:not(.secondary):not(.disabled) {
+  background-color: var(--button-bg); color: var(--button-text);
+  background-image: linear-gradient(180deg, rgba(255,255,255,.32), transparent 53%, rgba(0,45,115,.12));
+  border-color: rgba(0,91,185,.45);
+  box-shadow: inset 0 -1px 2px rgba(0,47,114,.14), 0 2px 5px var(--glass-shadow);
+}
+:root .detail-section .report-actions .btn:not(.disabled)::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.28) 48%, transparent 66%);
+  transform: translateX(-110%); opacity: 0;
+  transition: transform 350ms ease, opacity 160ms ease;
+}
+:root[data-theme="dark"] .detail-section .report-actions .btn.secondary {
+  background: linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.02) 55%, rgba(190,219,255,.06)), var(--glass-fill);
+}
+:root .detail-section .report-actions .btn.disabled {
+  background: var(--surface-alt); color: var(--muted-2); border-color: var(--border);
+}
+:root .detail-section .frame-links a { height: 18px; padding: 0 5px; }
+@media (hover: hover) and (pointer: fine) {
+  :root .detail-section .report-actions .btn:not(.disabled):hover::after {
+    transform: translateX(110%); opacity: 1;
+  }
+  :root .detail-section :is(.report-actions .btn, .frame-links a):not(:disabled):not(.disabled):hover {
+    box-shadow: inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-edge), 0 3px 8px var(--glass-hover-shadow);
+    border-color: var(--blue);
+  }
+  :root .detail-section .report-actions .btn:not(.secondary):not(.disabled):hover {
+    box-shadow: inset 0 -1px 2px rgba(0,47,114,.14), 0 3px 8px var(--glass-hover-shadow);
+  }
+}
+:root .infotip-btn { background: transparent; box-shadow: none; border-radius: 50%; }
+
+/* One persistent glass selection moves between equally sized navigation cells. */
+nav.tabs {
+  --tab-gap: 3px; --tab-inset: 4px;
+  position: relative; isolation: isolate; display: grid; border-radius: var(--control-radius); margin-left: auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); width: 276px;
+  gap: var(--tab-gap); padding: var(--tab-inset);
+  background-color: var(--glass-fill); background-image: var(--glass-reflection);
+  box-shadow: var(--glass-button-shadow);
+}
+nav.tabs a, nav.tabs button { position: relative; z-index: 1; justify-content: center; padding-inline: 12px; }
+nav.tabs .active, nav.tabs a:not(.active):hover { background: transparent; box-shadow: none; }
+nav.tabs .active { color: var(--text); font-weight: 600; }
+/* The moving selection is separate from each link; give every tab its own
+   hover layer so both selected and unselected tabs respond visibly. */
+nav.tabs a::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  border-radius: var(--control-radius); pointer-events: none; opacity: 0;
+  background: var(--glass-reflection);
+  box-shadow: inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-edge), 0 4px 10px var(--glass-hover-shadow);
+  transition: opacity 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  nav.tabs a:hover::before { opacity: 1; }
+}
+nav.tabs a:focus-visible::before { opacity: 1; }
+.tab-selection {
+  position: absolute; z-index: 0; pointer-events: none;
+  left: var(--tab-inset); top: var(--tab-inset); bottom: var(--tab-inset);
+  width: calc((100% - var(--tab-inset) - var(--tab-inset) - var(--tab-gap) - var(--tab-gap)) / 3);
+  transition: transform 240ms cubic-bezier(.2,.85,.25,1.08);
+}
+.tab-glass-surface {
+  display: block; width: 100%; height: 100%; border-radius: var(--control-radius);
+  background: radial-gradient(120% 130% at 0 0, var(--glass-hi), transparent 45%), var(--glass-reflection), var(--glass-fill);
+  box-shadow: inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-edge), 0 2px 5px var(--glass-shadow);
+}
+.tab-glass-surface[data-animate="true"] { animation: glass-rebound 240ms ease-out; }
+@keyframes glass-rebound {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.07, .94); }
+  75% { transform: scale(.99, 1.02); }
+  100% { transform: scale(1); }
+}
+@media (max-width: 600px) {
+  nav.tabs { --tab-gap: 0px; --tab-inset: 3px; width: auto; border-radius: var(--control-radius); margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .detail-section .report-actions .btn::after { transition: none; }
+  nav.tabs a::before { transition: none; }
+  .tab-selection, .tab-glass-surface, :root :is(select, .btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill, .build-pop-reset, .active-filters button, .section-nav button, .section-nav .detail-link),
+  :root :is(.btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill)::after {
+    transition: none !important; animation: none !important;
+  }
+  :root :is(select, .btn, .filter-toggle, .feedback-link, .theme-toggle, .build-pill, .build-pop-reset, .active-filters button, .section-nav button, .section-nav .detail-link):active { transform: none !important; }
 }

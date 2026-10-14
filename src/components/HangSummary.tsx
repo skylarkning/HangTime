@@ -19,20 +19,21 @@ import {
 } from "@/data/hangAreas";
 import { platformLabel } from "@/data/platforms";
 import { InfoTip } from "./InfoTip";
-import { representativeFrameDepth, shortSymbol } from "@/frames";
+import { leafFrameDepth, shortSymbol } from "@/frames";
 
 interface HangSummaryProps {
   signature: HangSignature;
   frames: Frame[];
   /** Scroll the stack to a frame and flash it. */
   onJump: (depth: number) => void;
+  contextAvailable?: boolean;
 }
 
-export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
+export function HangSummary({ signature, frames, onJump, contextAvailable = true }: HangSummaryProps) {
   const [expanded, setExpanded] = useState(false);
   const evidenceId = useId();
   const { kind } = signature;
-  const depth = representativeFrameDepth(kind, frames);
+  const depth = leafFrameDepth(frames);
   const representative = frames[depth];
   const activity = activityText(kind);
   const contexts = hangContext(signature.annotationStats, signature.count);
@@ -73,12 +74,12 @@ export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
       <p className={`summary-title${signature.knownBug ? " summary-bug-title" : ""}`}>
         {signature.knownBug ? <a href={`https://bugzilla.mozilla.org/show_bug.cgi?id=${signature.knownBug.id}`} target="_blank" rel="noreferrer">
           Bug {signature.knownBug.id}: {signature.knownBug.summary}
-        </a> : representative ? shortSymbol(representative.funcName) : "(empty stack)"}
+        </a> : representative ? representative.funcName : "(empty stack)"}
       </p>
       {representative && <p className="summary-frame">
-        <button className="link" onClick={() => onJump(depth)} title="Representative frame for identifying this stack; not a confirmed cause">
-          Representative frame {depth}{representative.libName && <> · {representative.libName}</>} ↗
-          {signature.knownBug && <> · <code>{shortSymbol(representative.funcName)}</code></>}
+        <button className="link" onClick={() => onJump(depth)} title="Show the recorded leaf frame in the stack">
+          Leaf frame {depth}{representative.libName && <> · {representative.libName}</>} ↗
+          {signature.knownBug && <> · <code>{representative.funcName}</code></>}
         </button>
       </p>}
       <div className="summary-description">
@@ -137,7 +138,7 @@ export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
         )}
       </dl>
       </div>
-      <p className="summary-when">
+      {contextAvailable ? <p className="summary-when">
         {platform && (
           <span title="Share of this hang's reports from its most common platform">
             {platformLabel(platform.os)} {pct(platform.share)}
@@ -152,7 +153,7 @@ export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
         ) : (
           <span className="summary-none">No context flags recorded</span>
         )}
-      </p>
+      </p> : <p className="summary-when">Per-stack platform and context breakdowns unavailable.</p>}
 
     </div>
   );
