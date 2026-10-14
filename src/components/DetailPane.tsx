@@ -15,7 +15,15 @@ import {
   type BugComponent,
 } from "@/data/componentMap";
 import { isKnownComponent, type ProductComponents } from "@/data/components";
-import { useComponents } from "@/queries/hooks";
+import { useComponents, useSourceResolver } from "@/queries/hooks";
+import {
+  githubLine,
+  jsFrameLocation,
+  searchableName,
+  searchfoxLine,
+  searchfoxSearch,
+  type SourceResolver,
+} from "@/data/sourceLinks";
 import { resolveFrames } from "@/processing/select";
 import { platformBaseline, platformSkew } from "@/data/platformSkew";
 import { platformLabel } from "@/data/platforms";
@@ -90,25 +98,7 @@ export function DetailPane({
 
       {/* The stack first: it says what the hang is, and everything below is
           about how often and where it happens. */}
-      <div className="detail-section">
-        <h3>Stack ({frames.length} frames)</h3>
-        <div className="stack-trace">
-          {frames.length === 0 && <div className="frame">(empty stack)</div>}
-          {frames.map((frame, i) => (
-            <div key={i} className={`frame${isOwnCode(frame) ? "" : " system"}`}>
-              <span className="idx">{i}</span>
-              <span className="name">
-                <Highlight text={frame.funcName} needle={filter} />
-              </span>
-              {frame.libName && (
-                <span className="lib">
-                  <Highlight text={frame.libName} needle={filter} />
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      <StackSection frames={frames} filter={filter} />
 
       <TimeseriesChart index={timeseries} signature={signature} />
 
@@ -140,6 +130,88 @@ export function DetailPane({
 
     </div>
   );
+}
+
+function StackSection({ frames, filter }: { frames: Frame[]; filter: string }) {
+  const resolver = useSourceResolver().data;
+  return (
+    <div className="detail-section">
+      <h3>
+        Stack ({frames.length} frames)
+        <InfoTip label="Stack">
+          Frame 0 is where the thread was stuck; each frame below called the one
+          above. Firefox&rsquo;s own code is in normal text, system libraries are
+          dimmed.
+          <span className="eg">
+            <b>Searchfox</b> and <b>GitHub</b> open a JavaScript frame&rsquo;s file at
+            its line. For a C++ frame, <b>Searchfox</b> searches for the function,
+            which leads to its definition: the hang data doesn&rsquo;t carry C++ file
+            and line numbers yet. Links show the current source, so a line can
+            have moved if the file changed since this build.
+          </span>
+        </InfoTip>
+      </h3>
+      <div className="stack-trace">
+        {frames.length === 0 && <div className="frame">(empty stack)</div>}
+        {frames.map((frame, i) => (
+          <div key={i} className={`frame${isOwnCode(frame) ? "" : " system"}`}>
+            <span className="idx">{i}</span>
+            <span className="name">
+              <Highlight text={frame.funcName} needle={filter} />
+            </span>
+            {frame.libName && (
+              <span className="lib">
+                <Highlight text={frame.libName} needle={filter} />
+              </span>
+            )}
+            <FrameLinks frame={frame} resolver={resolver} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Source links for one stack frame, or nothing for a system library frame. */
+function FrameLinks({ frame, resolver }: { frame: Frame; resolver?: SourceResolver }) {
+  const link = (href: string, text: string, title: string) => (
+    <a href={href} target="_blank" rel="noreferrer" title={title}>
+      {text}
+    </a>
+  );
+
+  const js = jsFrameLocation(frame.funcName);
+  if (js) {
+    const src = resolver?.resolve(js.path);
+    if (src) {
+      const where = `${src}:${js.line}`;
+      return (
+        <span className="frame-links">
+          {link(searchfoxLine(src, js.line), "Searchfox", `Open ${where} in Searchfox`)}
+          {link(githubLine(src, js.line), "GitHub", `Open ${where} on GitHub`)}
+        </span>
+      );
+    }
+    // Not resolved (or the map is still loading): search for the file instead.
+    const file = js.path.slice(js.path.lastIndexOf("/") + 1);
+    return (
+      <span className="frame-links">
+        {link(searchfoxSearch(file), "Searchfox", `Search Searchfox for ${file}`)}
+      </span>
+    );
+  }
+
+  // Firefox's own native frames, and its labelled frames (no library), which
+  // name Firefox code too; system library frames have no Firefox source.
+  if (!isOwnCode(frame)) {
+    return null;
+  }
+  const name = searchableName(frame.funcName);
+  return name ? (
+    <span className="frame-links">
+      {link(searchfoxSearch(name), "Searchfox", `Search Searchfox for ${name}`)}
+    </span>
+  ) : null;
 }
 
 function FileBugSection({

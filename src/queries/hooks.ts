@@ -21,6 +21,7 @@ import { fetchProfile, type DateSpec, type ThreadKind } from "@/data/dataSource"
 import { fetchBugs, type BugMap } from "@/data/bugs";
 import { fetchComponents, type ProductComponents } from "@/data/components";
 import { fetchTimeseries, type TimeseriesIndex } from "@/data/timeseries";
+import { fetchSourceResolver, type SourceResolver } from "@/data/sourceLinks";
 import {
   progressKey,
   reportProgress,
@@ -104,6 +105,21 @@ async function processProfile(
     bugs,
     Comlink.proxy(() => reportProgress(key, { computed: true })),
   );
+}
+
+/**
+ * Maps JS frame files to source paths, for the stack's source links. Fetched
+ * the first time a stack is shown and kept for the session; best-effort, as
+ * without it a JS frame just has no link.
+ */
+export function useSourceResolver(): UseQueryResult<SourceResolver> {
+  return useQuery<SourceResolver>({
+    queryKey: ["source-resolver"],
+    queryFn: fetchSourceResolver,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: 1,
+  });
 }
 
 export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {

@@ -401,7 +401,10 @@ export function Guide() {
               Every frame, starting at frame 0, where the thread was stuck, and
               ending at the outermost caller. Firefox's own code is in normal text;
               operating system and third-party libraries are dimmed, so the Firefox
-              frames stand out.
+              frames stand out. Hover a frame for its source links:{" "}
+              <em>Searchfox</em> and <em>GitHub</em> open a JavaScript frame&apos;s
+              file at its line; for a C++ frame, <em>Searchfox</em> searches for the
+              function, which leads to its definition.
             </Item>
             <Item name="History">
               The hang's daily time or count across the window, one bar per day.
