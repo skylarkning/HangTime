@@ -75,7 +75,7 @@ export function Header({ thread }: HeaderProps) {
           Feedback ↗
         </a>
         <span className="pill">{thread === "child" ? "Child process" : "Main thread"}</span>
-        <span className="version">V1.2</span>
+        <span className="version">V1.2.1</span>
       </div>
     </header>
   );

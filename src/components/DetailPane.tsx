@@ -36,14 +36,13 @@ import { resolveFrames } from "@/processing/select";
 import { platformBaseline, platformSkew } from "@/data/platformSkew";
 import { platformLabel } from "@/data/platforms";
 import { formatCount, formatDate, formatSeconds, formatShare } from "@/format";
-import { frameLabel, isOwnCode } from "@/frames";
+import { frameLabel, isOwnCode, shortSymbol } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
 import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
 import { HangSummary, evidenceMarks } from "./HangSummary";
 import { GroupRelationNote } from "./GroupRelationNote";
-import { shortSymbol } from "./HangName";
 import { explainGroup, type ClassifiedMember } from "@/data/groupRelation";
 import { activityText, hangTitle } from "@/data/hangAreas";
 import { memberStacks } from "@/processing/signatureKey";
@@ -136,25 +135,9 @@ export function DetailPane({
         <button className="inspector-back" onClick={onBack}>← Back to hangs</button>
         <CopyLink href={permalink} build={profile.date} />
       </SectionNav>
-      {signature.knownBug && (
-        <div className="detail-section">
-          <h3>Bugzilla</h3>
-          <div className="bug-link">
-            <a
-              href={`https://bugzilla.mozilla.org/show_bug.cgi?id=${signature.knownBug.id}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Bug {signature.knownBug.id}
-            </a>{" "}
-            — {signature.knownBug.summary}
-          </div>
-        </div>
-      )}
-
+      <HangSummary key={signature.id} signature={signature} frames={frames} onJump={setFlash} />
       {/* What the stack shows, then the stack: together they say what the hang
           is, and everything below is about how often and where it happens. */}
-      <HangSummary signature={signature} frames={frames} onJump={setFlash} />
       <StackSection
         key={`stack:${signature.id}`}
         frames={frames}
@@ -316,6 +299,17 @@ function StackSection({
 }) {
   const resolver = useSourceResolver().data;
   const [showAll, setShowAll] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("Copy stack");
+  const copyStack = async () => {
+    try {
+      await navigator.clipboard.writeText(frames.map((frame, depth) =>
+        `${depth} ${frame.funcName}${frame.libName ? ` [${frame.libName}]` : ""}`,
+      ).join("\n"));
+      setCopyStatus("Stack copied");
+    } catch {
+      setCopyStatus("Copy failed — select stack text");
+    }
+  };
   // Frames brought back one run at a time, or by a summary link.
   const [revealed, setRevealed] = useState<ReadonlySet<number>>(() => new Set());
   // A summary link to a folded frame shows it at once (so the pane can scroll
@@ -423,26 +417,25 @@ function StackSection({
             </span>
           </InfoTip>
         </h3>
-        {focusable && (
-          <span className="stack-toggles">
-            {hidden > 0 && (
-              <button className="link" onClick={() => setShowAll(true)}>
-                Show all {frames.length} frames
-              </button>
-            )}
-            {expanded && (
-              <button
-                className="link"
-                onClick={() => {
-                  setShowAll(false);
-                  setRevealed(new Set());
-                }}
-              >
-                Show focused
-              </button>
-            )}
-          </span>
-        )}
+        <span className="stack-toggles">
+          <button className="link" onClick={copyStack} aria-live="polite" title="Copy every frame with full function arguments, including folded frames">{copyStatus}</button>
+          {hidden > 0 && (
+            <button className="link" onClick={() => setShowAll(true)}>
+              Show all {frames.length} frames
+            </button>
+          )}
+          {expanded && (
+            <button
+              className="link"
+              onClick={() => {
+                setShowAll(false);
+                setRevealed(new Set());
+              }}
+            >
+              Show focused
+            </button>
+          )}
+        </span>
       </div>
       <div className="stack-trace">
         {frames.length === 0 && <div className="frame">(empty stack)</div>}

@@ -208,6 +208,10 @@ table.hangs th {
   position: sticky; top: 0; z-index: 1;
 }
 table.hangs th.num, table.hangs td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.column-heading { display: inline-flex; align-items: center; max-width: 100%; white-space: nowrap; }
+.column-heading .infotip { flex: 0 0 auto; }
+.column-heading .infotip-btn { margin-left: 4px; }
+.column-heading .column-scope-label { white-space: normal; }
 table.hangs td { padding: 13px 10px; border-bottom: 1px solid var(--row-border); vertical-align: middle; }
 table.hangs tbody tr { cursor: pointer; }
 table.hangs tbody tr:hover td { background: var(--surface-alt); }
@@ -220,14 +224,17 @@ table.hangs .sig {
   font-family: var(--mono); font-size: 11.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0;
 }
-/* A hang's name: its description, then the leaf and caller in grey. */
+/* Observed symbol first; rule-based interpretation below. */
+.hang-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.hang-frame { flex-shrink: 0; font: 10px var(--mono); color: var(--muted); }
+.hang-title.hang-bug-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .hang-title, .hang-sub { display: block; overflow: hidden; text-overflow: ellipsis; }
 .hang-title {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--mono); min-width: 0;
   font-size: 13px; font-weight: 550; color: var(--text);
 }
 .hang-activity { font-weight: 400; color: var(--muted); }
-.hang-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.hang-sub { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .hang-sub-title {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11.5px;
 }
@@ -404,14 +411,19 @@ table.hangs .trend { width: 100px; }
 .frame .idx { color: var(--muted-2); font-size: 10px; min-width: 1.6em; text-align: right; flex: none; }
 .frame .name { color: var(--text); word-break: break-word; }
 .frame .lib { color: var(--muted); flex: none; }
-/* Source links, pushed to the row's end; quiet until the row is hovered. */
+/* Source navigation stays visible without requiring a row hover. */
 .frame-links {
-  margin-left: auto; flex: none; display: flex; gap: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px;
+  margin-left: auto; flex: none; display: flex; gap: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 10px;
 }
-.frame-links a { color: var(--muted-2); text-decoration: none; }
-.frame:hover .frame-links a { color: var(--blue); }
-.frame-links a:hover { text-decoration: underline; }
+.frame-links a {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 5px; border: 1px solid var(--blue-border);
+  border-radius: 4px; background: var(--blue-light); color: var(--blue);
+  font-weight: 500; line-height: 16px; white-space: nowrap; text-decoration: none;
+}
+.frame-links a:hover { border-color: var(--blue); background: var(--surface); }
+.frame-links a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .frame.system .name { color: var(--muted); }
 /* A run of frames a focused stack leaves out; click to show them. */
 .frame.frame-run {
@@ -423,7 +435,7 @@ table.hangs .trend { width: 100px; }
   font-size: 11.5px; font-style: italic;
 }
 .frame.frame-run:hover .name { color: var(--blue); }
-.stack-toggles { display: flex; gap: 12px; font-size: 12px; }
+.stack-toggles { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; }
 /* Frames the summary points at, tagged with what they're evidence of. */
 .frame.marked { background: var(--marked-bg); }
 .frame.flash { background: var(--highlight-bg); transition: background 0.3s; }
@@ -435,8 +447,19 @@ table.hangs .trend { width: 100px; }
 }
 
 /* Hang summary */
-.summary-title { font-size: 22px; font-weight: 600; line-height: 1.25; letter-spacing: -0.6px; }
-.summary-activity { font-weight: 400; color: var(--muted); }
+.summary-title { font-family: var(--mono); font-size: 20px; font-weight: 600; line-height: 1.35; letter-spacing: -0.4px; overflow-wrap: anywhere; }
+.summary-frame { margin-top: 5px; font-size: 11px; }
+.summary-description { display: flex; align-items: flex-start; gap: 7px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text); }
+.summary-description > .infotip { flex-shrink: 0; font-weight: 400; }
+.summary-description > .infotip .infotip-btn { margin-left: 0; }
+.summary-disclosure { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.summary-disclosure:hover { color: var(--blue); }
+.summary-chevron { flex-shrink: 0; align-self: flex-start; margin-top: 3px; transition: transform 160ms ease; }
+.summary-disclosure[aria-expanded="true"] .summary-chevron { transform: rotate(90deg); }
+.summary-bug-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.summary-bug-title a { color: inherit; text-decoration: none; }
+.summary-bug-title a:hover { color: var(--blue); text-decoration: underline; }
+.summary-activity { font-weight: 500; color: inherit; }
 .summary-when {
   display: flex; flex-wrap: wrap; gap: 4px 0; margin-top: 4px;
   font-size: 12px; color: var(--muted);
@@ -445,7 +468,7 @@ table.hangs .trend { width: 100px; }
 .summary-none { color: var(--muted-2); font-style: italic; }
 .summary-evidence {
   display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px;
-  margin-top: 18px; font-size: 12px;
+  margin: 12px 0; padding-left: 19px; font-size: 12px;
 }
 .summary-evidence dt { color: var(--muted); }
 .summary-evidence dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0; }
@@ -988,7 +1011,7 @@ table.hangs .num.share { width: 4em; color: var(--muted); }
   table.hangs { font-size: 11px; }
   table.hangs th, table.hangs td { padding-inline: 7px; }
   table.hangs .rank { width: 24px; }
-  table.hangs .num.time { width: 62px; }
+  table.hangs .num.time { width: 70px; }
   table.hangs .num.count { display: none; }
   table.hangs.sort-count .num.count { display: table-cell; width: 62px; }
   table.hangs.sort-count .num.time { display: none; }
@@ -997,7 +1020,7 @@ table.hangs .num.share { width: 4em; color: var(--muted); }
   .hang-sub { font-size: 10px; }
   .trend-badge { font-size: 10px; }
   .detail-section { padding: 20px 18px; }
-  .summary-title { font-size: 21px; }
+  .summary-title { font-size: 17px; }
   .section-nav { font-size: 11px; padding: 6px 10px; gap: 7px 10px; }
   .section-nav-end { display: flex; flex-basis: 100%; justify-content: space-between; margin: 0; padding-top: 5px; }
   .summary-evidence { grid-template-columns: 62px minmax(0, 1fr); gap: 9px; }

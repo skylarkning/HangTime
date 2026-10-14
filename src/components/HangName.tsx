@@ -1,16 +1,11 @@
 /**
- * How a hang is named in a list: what it is, then where it stopped.
- *
- * The first line is the evidence-based description ("Startup cache: lock
- * wait", in a lighter weight "during JS module loading"); the second is the
- * leaf frame the stack stopped on and the Firefox caller that made the call.
- * A bug-tracked row leads with the bug instead, since a person wrote that.
+ * A tracked bug's title or an observed symbol first; stack context beneath.
  */
 
 import type { HangSignature, KnownBug, ProcessedProfile } from "@/processing/types";
 import { activityText, hangTitle } from "@/data/hangAreas";
 import { resolveFrames } from "@/processing/select";
-import { frameLabel } from "@/frames";
+import { representativeFrameDepth, shortSymbol } from "@/frames";
 import { Highlight } from "./Highlight";
 
 interface HangNameProps {
@@ -21,27 +16,24 @@ interface HangNameProps {
 
 export function HangName({ profile, sig, filter }: HangNameProps) {
   const { kind } = sig;
-  const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
-  const callerIndex = kind.callerFrame > 0 ? sig.frameKeys[kind.callerFrame] : undefined;
-  const caller = callerIndex === undefined ? "" : shortSymbol(profile.funcNames[callerIndex]);
+  const frames = resolveFrames(profile, sig.frameKeys);
+  const depth = representativeFrameDepth(kind, frames);
+  const frame = frames[depth];
   const title = hangTitle(kind);
   const activity = activityText(kind);
 
   return (
     <>
-      <span className="hang-title">
-        {title}
-        {activity && <span className="hang-activity"> {activity}</span>}
+      <span className="hang-heading" title={frame ? `${frame.funcName} · frame ${depth} · ${frame.libName || "script"}. Representative frame, not a confirmed cause.` : undefined}>
+        <span className={`hang-title${sig.knownBug ? " hang-bug-title" : ""}`}>
+          {sig.knownBug ? <BugLink bug={sig.knownBug} /> :
+            <Highlight text={frame ? shortSymbol(frame.funcName) : "(empty stack)"} needle={filter} />}
+        </span>
+        {frame && !sig.knownBug && <span className="hang-frame">frame {depth}</span>}
       </span>
-      <span className="hang-sub">
-        {sig.knownBug && <span className="hang-sub-title"><BugLink bug={sig.knownBug} /> · </span>}
-        <Highlight text={frameLabel(leaf)} needle={filter} />
-        {caller && (
-          <span className="hang-caller" title="The Firefox code that made this call">
-            {" ← "}
-            <Highlight text={caller} needle={filter} />
-          </span>
-        )}
+      <span className="hang-sub" title={`${title} ${activity}`}>
+        {sig.knownBug && frame && <><Highlight text={shortSymbol(frame.funcName)} needle={filter} /> · frame {depth} · </>}
+        {title}{activity && <> {activity}</>}
       </span>
     </>
   );
@@ -57,14 +49,8 @@ function BugLink({ bug }: { bug: KnownBug }) {
         rel="noreferrer"
         onClick={(e) => e.stopPropagation()}
       >
-        Bug {bug.id}
+        Bug {bug.id}: {bug.summary}
       </a>
     </>
   );
-}
-
-/** A frame's symbol without its argument list, for naming it in passing. */
-export function shortSymbol(funcName: string): string {
-  const paren = funcName.indexOf("(");
-  return paren <= 0 ? funcName : funcName.slice(0, paren);
 }

@@ -1,6 +1,36 @@
 /** Frame display helpers shared by the table and detail pane. */
 
 import type { Frame } from "@/processing/types";
+import type { HangKind } from "@/data/hangAreas";
+
+const PRIMITIVE_MECHANISMS = new Set([
+  "lock-wait", "blocking-wait", "idle-wait", "thread-join", "sleep",
+  "memory-copy", "memory-alloc", "file-io",
+]);
+
+/** A searchable stack landmark, never a claim about the root cause. */
+export function representativeFrameDepth(kind: HangKind, frames: Frame[]): number {
+  const candidates = PRIMITIVE_MECHANISMS.has(kind.mechanism)
+    ? [kind.callerFrame, kind.mechanismFrame, 0]
+    : [kind.mechanismFrame, kind.callerFrame, 0];
+  return candidates.find((depth) => depth >= 0 && !!frames[depth]?.funcName) ?? -1;
+}
+
+/** Keep qualified names, templates and operator(), omitting call arguments. */
+export function shortSymbol(funcName: string): string {
+  const name = funcName.replace(/\s+\S+\.(?:m?js|jsm):\d+(?::\d+)?$/, "");
+  let angle = 0;
+  for (let i = 0; i < name.length; i++) {
+    if (name[i] === "<" && !/operator[<>=!]*$/.test(name.slice(0, i))) angle++;
+    else if (name[i] === ">" && angle > 0) angle--;
+    else if (name[i] === "(" && angle === 0) {
+      if (name.slice(i, i + 21) === "(anonymous namespace)") { i += 20; continue; }
+      if (name.slice(0, i).endsWith("operator") && name[i + 1] === ")") { i++; continue; }
+      if (i > 0) return name.slice(0, i).trim();
+    }
+  }
+  return name;
+}
 
 const MOZ_LIBS = new Set(["xul", "XUL", "libxul.so", "mozglue", "libmozglue.so"]);
 const OWN_BINARIES = new Set(["firefox", "plugin-container"]);

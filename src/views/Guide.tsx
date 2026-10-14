@@ -361,12 +361,13 @@ export function Guide() {
               .
             </Item>
             <Item name="Hang">
-              What the hang is, in two lines. First its description, such as{" "}
-              <em>Startup cache: lock wait</em> during JS module loading. Then, in
-              grey, the <b>leaf frame</b> (the function the thread was in when it
-              was sampled, and its library) and, after <code>←</code>, the Firefox
-              code that called it. If a bug already covers the hang, the first line
-              is the bug number and summary instead.
+              Tracked hangs use their Bugzilla number and title. Other hangs use
+              a shortened, searchable function name and its frame number first;
+              class and namespace names stay, arguments are omitted. Generic
+              waits and memory operations prefer a distinctive caller when one
+              is available. The second line describes the area and mechanism;
+              tracked hangs also show their representative function. A representative frame
+              identifies the stack, not a confirmed root cause.
             </Item>
           </dl>
           <p className="guide-note">
@@ -424,17 +425,23 @@ export function Guide() {
               It names the build, so it keeps working after newer builds arrive.
             </Item>
             <Item name="Bugzilla">
-              Shown when the hang is tracked by a bug, with a link to it.
+              When a bug tracks the hang, its number and title lead the summary
+              and link directly to Bugzilla.
             </Item>
             <Item name="Summary">
-              The hang&rsquo;s description, then the platform it mostly comes from and
+              The same Bugzilla title or short function name as the list, with a link to its
+              representative frame in Stack. The stack description follows,
+              then the platform it mostly comes from and
               the context flags its reports carry, then the evidence: the frame that
               shows the <em>mechanism</em>, the frame that names the <em>area</em>,
               the next area out (<em>during</em>), and the Firefox <em>caller</em>.
-              Click a frame to jump to it in the stack, where it is tagged.
+              Expand the description to see its supporting frames; click a
+              frame to jump to it in the stack, where it is tagged.
             </Item>
             <Item name="Stack">
-              Every frame, starting at frame 0, where the thread was stuck, and
+              Full function signatures, including parameters. <em>Copy stack</em>
+              copies all frames, including folded ones. Every frame starts at
+              frame 0, where the thread was stuck, and
               ending at the outermost caller. Firefox's own code is in normal text;
               operating system and third-party libraries are dimmed, so the Firefox
               frames stand out. A long stack opens focused: the frames at the leaf

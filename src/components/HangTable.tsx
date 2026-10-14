@@ -69,20 +69,23 @@ export function HangTable({
         <tr>
           <th className="rank">#</th>
           <th>
-            Hang
+            <span className="column-heading"><span>Hang</span>
             <InfoTip label="Hang">
-              What the hang is, read from its stack: the area of the browser it
-              is in and how the thread was stuck, then (in grey) the frame the
-              stack stopped on and the Firefox code that called it.
+              Tracked hangs use their Bugzilla number and title. Other titles
+              use a shortened function name from the representative stack,
+              with its frame number. Generic waits, allocation and memory
+              operations prefer a distinctive caller when available. Class and
+              namespace names are kept; full arguments remain in Stack.
               <span className="eg">
-                e.g. <b>Startup cache: lock wait</b> during JS module loading, over{" "}
-                <code>WaitOnAddress ← StartupCache::GetBuffer</code>. It describes
-                where the thread was, not a confirmed cause.
+                e.g. <code>mozilla::scache::StartupCache::GetBuffer</code>, with
+                “Startup cache: lock wait” below. A function title identifies
+                a frame; the stack description does not establish a cause.
               </span>
             </InfoTip>
+            </span>
           </th>
           <th className="num time">
-            Time (s)
+            <span className="column-heading"><span>Time (s)</span>
             <InfoTip label="Time (s)">
               Total time Firefox’s main thread spent hanging on this signature
               for this build, in seconds — every sampled hang’s duration summed.
@@ -91,9 +94,10 @@ export function HangTable({
                 unresponsiveness across sampled reports for this build.
               </span>
             </InfoTip>
+            </span>
           </th>
           <th className="num count">
-            Count
+            <span className="column-heading"><span>Count</span>
             <InfoTip label="Count">
               How many hangs matched this signature in this build’s sampled BHR
               reports. Each is one main-thread stall.
@@ -101,9 +105,10 @@ export function HangTable({
                 e.g. <code>1,773</code> = 1,773 recorded hang occurrences.
               </span>
             </InfoTip>
+            </span>
           </th>
           <th className="trend">
-            {trendAllPlatforms ? "Trend (all platforms)" : "Trend"}
+            <span className="column-heading"><span className={trendAllPlatforms ? "column-scope-label" : undefined}>{trendAllPlatforms ? "Trend (all platforms)" : "Trend"}</span>
             <InfoTip label="Trend">
               This hang’s average over the 7 days ending on this build, against
               the 7 days before. A percentage is only shown when both weeks have
@@ -123,6 +128,7 @@ export function HangTable({
                 )}
               </span>
             </InfoTip>
+            </span>
           </th>
         </tr>
       </thead>

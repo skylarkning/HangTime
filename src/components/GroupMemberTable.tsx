@@ -21,7 +21,7 @@ import { formatCount, formatPercentOfTotal, formatSeconds, formatShare } from "@
 import { frameLabel } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
-import { shortSymbol } from "./HangName";
+import { shortSymbol } from "@/frames";
 
 interface GroupMemberTableProps {
   profile: ProcessedProfile;

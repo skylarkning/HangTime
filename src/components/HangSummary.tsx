@@ -6,6 +6,7 @@
  * frame in the stack below.
  */
 
+import { useId, useState } from "react";
 import type { Frame, HangSignature } from "@/processing/types";
 import {
   MECHANISMS,
@@ -18,7 +19,7 @@ import {
 } from "@/data/hangAreas";
 import { platformLabel } from "@/data/platforms";
 import { InfoTip } from "./InfoTip";
-import { shortSymbol } from "./HangName";
+import { representativeFrameDepth, shortSymbol } from "@/frames";
 
 interface HangSummaryProps {
   signature: HangSignature;
@@ -28,7 +29,11 @@ interface HangSummaryProps {
 }
 
 export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
+  const [expanded, setExpanded] = useState(false);
+  const evidenceId = useId();
   const { kind } = signature;
+  const depth = representativeFrameDepth(kind, frames);
+  const representative = frames[depth];
   const activity = activityText(kind);
   const contexts = hangContext(signature.annotationStats, signature.count);
   const platform = topPlatform(signature.platformStats);
@@ -65,26 +70,43 @@ export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
           </span>
         </InfoTip>
       </h3>
-      <p className="summary-title">
-        {hangTitle(kind)}
-        {activity && <span className="summary-activity"> {activity}</span>}
+      <p className={`summary-title${signature.knownBug ? " summary-bug-title" : ""}`}>
+        {signature.knownBug ? <a href={`https://bugzilla.mozilla.org/show_bug.cgi?id=${signature.knownBug.id}`} target="_blank" rel="noreferrer">
+          Bug {signature.knownBug.id}: {signature.knownBug.summary}
+        </a> : representative ? shortSymbol(representative.funcName) : "(empty stack)"}
       </p>
-      <p className="summary-when">
-        {platform && (
-          <span title="Share of this hang's reports from its most common platform">
-            {platformLabel(platform.os)} {pct(platform.share)}
-          </span>
-        )}
-        {contexts.length > 0 ? (
-          contexts.slice(0, 4).map((c) => (
-            <span key={c.key} title={`${pct(c.share)} of reports carry ${c.key}`}>
-              {c.label} {pct(c.share)}
-            </span>
-          ))
-        ) : (
-          <span className="summary-none">No context flags recorded</span>
-        )}
-      </p>
+      {representative && <p className="summary-frame">
+        <button className="link" onClick={() => onJump(depth)} title="Representative frame for identifying this stack; not a confirmed cause">
+          Representative frame {depth}{representative.libName && <> · {representative.libName}</>} ↗
+          {signature.knownBug && <> · <code>{shortSymbol(representative.funcName)}</code></>}
+        </button>
+      </p>}
+      <div className="summary-description">
+        <button className="summary-disclosure" type="button"
+          aria-expanded={expanded} aria-controls={evidenceId}
+          onClick={() => setExpanded(!expanded)}
+          title={expanded ? "Hide supporting frames" : "Show supporting frames"}>
+          <svg className="summary-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="m4 2 4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>{hangTitle(kind)}{activity && <span className="summary-activity"> {activity}</span>}</span>
+        </button>
+        <InfoTip label="Stack description">
+          This description is inferred by rules that match function and library
+          names on the representative stack.
+          <p><b>Mechanism</b> describes the operation visible on the stack, such
+            as a lock wait or serialization. <b>Area</b> comes from the innermost
+            substantive subsystem match; generic layers are a fallback.
+            <b> During</b> names the next different subsystem further out.</p>
+          <p>Expand the description to see the frames behind each label. Click a
+            frame to inspect it. These labels describe the observed call path,
+            not a confirmed root cause: passing through input code does not
+            establish that an input method caused the hang.</p>
+          <span className="eg">Platform and context percentages below are
+            separate observations from reports, not part of these classification rules.</span>
+        </InfoTip>
+      </div>
+      <div id={evidenceId} hidden={!expanded}>
       <dl className="summary-evidence">
         <dt>Mechanism</dt>
         <dd>
@@ -114,6 +136,24 @@ export function HangSummary({ signature, frames, onJump }: HangSummaryProps) {
           </>
         )}
       </dl>
+      </div>
+      <p className="summary-when">
+        {platform && (
+          <span title="Share of this hang's reports from its most common platform">
+            {platformLabel(platform.os)} {pct(platform.share)}
+          </span>
+        )}
+        {contexts.length > 0 ? (
+          contexts.slice(0, 4).map((c) => (
+            <span key={c.key} title={`${pct(c.share)} of reports carry ${c.key}`}>
+              {c.label} {pct(c.share)}
+            </span>
+          ))
+        ) : (
+          <span className="summary-none">No context flags recorded</span>
+        )}
+      </p>
+
     </div>
   );
 }
