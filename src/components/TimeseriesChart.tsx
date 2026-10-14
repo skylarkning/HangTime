@@ -30,7 +30,15 @@ import type {
   ResolvedSeries,
   TimeseriesIndex,
 } from "@/data/timeseries";
-import { computeTrend, trendBadge, type TrendTone } from "@/data/trend";
+import {
+  comparisonSpan,
+  computeTrend,
+  formatDelta,
+  trendBadge,
+  trendEvidence,
+  trendHeadline,
+  type TrendTone,
+} from "@/data/trend";
 import { formatCount, formatDate, formatSeconds } from "@/format";
 import {
   PHASE_META,
@@ -46,7 +54,6 @@ import {
   topSegmentRadius,
 } from "./barStyle";
 import { InfoTip } from "./InfoTip";
-import { memberStacks } from "@/processing/signatureKey";
 
 /**
  * Draw a dashed vertical line at each Firefox train milestone that lands in the
@@ -145,6 +152,8 @@ interface LegendItem {
 interface TimeseriesChartProps {
   index: TimeseriesIndex | undefined;
   signature: HangSignature;
+  /** The build in view; the trend chips compare the week ending on it. */
+  endDate: string;
 }
 
 /** Full stack as a multi-line leaf->root list, for a legend item's hover title. */
@@ -210,7 +219,7 @@ function memberLabels(members: MemberSeries[]): string[] {
 }
 
 
-export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
+export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartProps) {
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
@@ -219,7 +228,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const { scrollRef, minWidth } = useDailyChartWidth(range.end - range.start + 1);
 
   const series = useMemo<ResolvedSeries | null>(
-    () => (index ? index.resolveByStack(memberStacks(signature)) : null),
+    () => (index ? index.resolveSignature(signature) : null),
     [index, signature],
   );
 
@@ -228,11 +237,11 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   }
   if (!series) {
     return (
-      <div className="detail-section">
+      <div className="detail-section" data-section="History">
         <h3>History</h3>
         <p className="muted">
-          No timeseries data for this hang — it isn’t in the top tracked
-          signatures over the window.
+          No history for this hang: none of its stacks is among the stacks the
+          history tracks, which are the top few hundred over the window.
         </p>
       </div>
     );
@@ -250,26 +259,33 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   const affected = series.total.affected && clip(series.total.affected);
   const totalAffected = series.totalAffected && clip(series.totalAffected);
 
-  const trend = computeTrend(series, metric);
+  const trend = computeTrend(series, metric, { endDate });
   const unit = metric === "ms" ? "ms" : "hangs";
   const fmt = (v: number) => Math.round(v).toLocaleString();
 
+  // The claim, then the dates it compares, so the evidence is on screen rather
+  // than only in a hover.
   const chips: { text: string; tone: TrendTone; title?: string }[] = [];
-  if (trend.isNew && trend.newSince) {
-    chips.push({
-      text: `New since ${formatDate(trend.newSince)}`,
-      tone: "blue",
-      title: "First sustained activity after a near-zero baseline",
-    });
-  } else {
-    const change = trendBadge(trend);
-    chips.push({
-      text: change.text === "stable" ? "stable" : `${change.text} vs prior 7d`,
-      tone: change.tone,
-      title:
-        `Recent 7d avg: ${fmt(trend.recentAvg)} ${unit}/day\n` +
-        `Previous 7d avg: ${fmt(trend.priorAvg)} ${unit}/day`,
-    });
+  const span = comparisonSpan(trend);
+  const delta =
+    trend.deltaPerDay != null && (trend.state === "increase" || trend.state === "decrease")
+      ? `, ${formatDelta(trend.deltaPerDay, metric)}`
+      : "";
+  chips.push({
+    text:
+      trend.state === "increase" || trend.state === "decrease"
+        ? `${trendBadge(trend).text}${delta}`
+        : trendHeadline(trend),
+    tone: trendBadge(trend).tone,
+    title: trendEvidence(trend),
+  });
+  if (span) {
+    const { recent, baseline } = trend;
+    const coverage =
+      baseline.days > 0
+        ? `${recent.observed}/${recent.days} and ${baseline.observed}/${baseline.days} days observed`
+        : `${recent.observed}/${recent.days} days observed`;
+    chips.push({ text: `${span} · ${coverage}`, tone: "neutral", title: trendEvidence(trend) });
   }
   if (trend.peakValue != null) {
     chips.push({
@@ -395,23 +411,25 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             const total = dayTotals[items[0]?.dataIndex ?? -1];
             return total == null ? "" : `Total: ${total.toLocaleString()} ${unit}`;
           },
-          // Append that single day's distinct affected users (and share of the
-          // day's users) when the artifact carried client metrics.
+          // Append that single day's distinct affected clients (and their share
+          // of the day's hang-reporting clients) when the artifact carried
+          // client metrics.
           afterBody: (items) => {
             if (!affected) {
               return "";
             }
             const i = items[0]?.dataIndex ?? 0;
-            const users = affected[i];
-            if (users == null) {
-              return "Affected users: no data for this day";
+            const clients = affected[i];
+            if (clients == null) {
+              return "Clients affected: no data for this day";
             }
             const dayTotal = totalAffected?.[i];
             const share =
               dayTotal != null && dayTotal > 0
-                ? ` (${((users / dayTotal) * 100).toFixed(2)}% of users)`
+                ? ` (${((clients / dayTotal) * 100).toFixed(2)}% of hang-reporting clients)`
                 : "";
-            return `Affected users: ${users.toLocaleString()}${share}`;
+            const bound = showMembers ? "up to " : "";
+            return `Clients affected: ${bound}${clients.toLocaleString()}${share}`;
           },
         },
       },
@@ -449,7 +467,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
   };
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="History">
       <div className="ts-header">
         <h3>
           History ({dates.length} days)
@@ -457,7 +475,15 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             Daily hang time (or count) for this signature across the window, so
             you can see if it’s rising, spiking, or newly appeared. Use the
             ms/count toggle to switch metric, a preset window to narrow the
-            range, or drag across the chart to zoom into one.
+            range, or drag across the chart to zoom into one. The chips compare
+            the 7 days ending on this build with the 7 before, and say how many
+            days of each this hang was actually recorded on.
+            <span className="eg">
+              The history is joined by the shape of each stack, ignoring names a
+              build can change without changing the code path (a renumbered
+              lambda, a moved line in a JS file), so a hang keeps its history
+              across those builds.
+            </span>
             <span className="eg">
               For a bug that covers several stacks, each bar is the bug total,
               split into its biggest stacks (the rest are summed as{" "}
@@ -466,8 +492,14 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
               lines, so a spike or a new hang can be lined up against a release:{" "}
               <em style={{ color: "#d76e00" }}>orange = Release</em>,{" "}
               <em style={{ color: "#0250bb" }}>blue = Beta</em>,{" "}
-              <em style={{ color: "#058b00" }}>green = Nightly</em>. Hover a day
-              to also see the distinct users affected that day.
+              <em style={{ color: "#058b00" }}>green = Nightly</em>.
+              {affected && (
+                <>
+                  {" "}
+                  Hover a day to also see the distinct clients affected that day,
+                  out of the clients that sent hang reports.
+                </>
+              )}
             </span>
           </InfoTip>
         </h3>
@@ -512,6 +544,7 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
           </span>
         ))}
       </div>
+      <HistoryNotes series={series} />
       <div ref={scrollRef} className="chart-scroll">
         <div className="ts-chart chart-zoomable" style={{ minWidth }} {...dragProps}>
           <Bar ref={chartRef} data={data} options={options} />
@@ -569,6 +602,42 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             </ol>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What the bars do and don't include, said up front: a bug folds in many
+ * stacks and the history keeps only the top tracked ones, and the build on
+ * screen may have been filled in from its own data.
+ */
+function HistoryNotes({ series }: { series: ResolvedSeries }) {
+  const { coverage, filledDate } = series;
+  const partial = coverage.share < 0.95;
+  if (!partial && !filledDate) {
+    return null;
+  }
+  const pct = coverage.share.toLocaleString(undefined, {
+    style: "percent",
+    maximumFractionDigits: coverage.share < 0.1 ? 1 : 0,
+  });
+  return (
+    <div className="ts-notes">
+      {partial && (
+        <p>
+          Follows {coverage.stacks.toLocaleString()} of this hang&rsquo;s{" "}
+          {coverage.totalStacks.toLocaleString()} stacks, {pct} of its time on this
+          build. The history keeps only the top tracked stacks, so every day counts
+          those stacks alone.
+        </p>
+      )}
+      {filledDate && (
+        <p>
+          {formatDate(filledDate)} is this build&rsquo;s own data: the history has
+          these stacks under the names earlier builds gave them (a renumbered lambda,
+          a moved JS line) and hasn&rsquo;t recorded this build&rsquo;s yet.
+        </p>
       )}
     </div>
   );

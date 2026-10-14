@@ -96,11 +96,14 @@ export interface Thread {
  * Optional affected-clients block emitted by a `bhr-aggregate --client-metrics`
  * run. Each value is a HyperLogLog distinct-client estimate. Keyed by the
  * canonical signature key (see signatureKey.ts) so the frontend can attach the
- * count to each signature. When absent, the dashboard synthesizes a placeholder
- * (dev only).
+ * count to each signature. When absent, the dashboard shows no affected-client
+ * numbers for the build.
  */
 export interface AffectedClientsArtifact {
-  /** Day's distinct-client total (HLL); the denominator for the % metric. */
+  /**
+   * Distinct clients present in the build's processed hang reports (HLL); the
+   * denominator for the % metric. Hang-reporting clients, not all users.
+   */
   totalDistinct: number;
   bySignature: Record<string, number>;
 }

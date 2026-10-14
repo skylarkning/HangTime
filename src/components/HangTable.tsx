@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { HangSignature, ProcessedProfile } from "@/processing/types";
-import { resolveFrames } from "@/processing/select";
-import { trendBadge, type TrendSummary } from "@/data/trend";
+import { trendBadge, trendEvidence, type TrendSummary } from "@/data/trend";
 import { formatCount, formatPercentOfTotal, formatSeconds } from "@/format";
-import { frameLabel } from "@/frames";
-import { Highlight } from "./Highlight";
+import { HangName } from "./HangName";
 import { InfoTip } from "./InfoTip";
 
 /** Rows rendered up front, and how many each "show more" click adds. */
@@ -25,6 +23,11 @@ interface HangTableProps {
   countOf?: (sig: HangSignature) => number;
   /** What the time column's percentages are of; defaults to the build total. */
   totalDuration?: number;
+  /**
+   * The list is narrowed to a platform, but trends can't be: the history only
+   * has all-platform series. The column header says so.
+   */
+  trendAllPlatforms?: boolean;
 }
 
 const ownDuration = (sig: HangSignature) => sig.duration;
@@ -40,6 +43,7 @@ export function HangTable({
   durationOf = ownDuration,
   countOf = ownCount,
   totalDuration,
+  trendAllPlatforms = false,
 }: HangTableProps) {
   const totals = useMemo(() => {
     let duration = 0;
@@ -84,18 +88,40 @@ export function HangTable({
             </InfoTip>
           </th>
           <th className="trend">
-            Trend
+            {trendAllPlatforms ? "Trend (all platforms)" : "Trend"}
             <InfoTip label="Trend">
-              Change in this hang’s activity: its recent 7-day average vs the
-              previous 7 days. <code>↑</code> getting worse, <code>↓</code>{" "}
-              improving, <code>new</code> = little or no earlier activity.
+              This hang’s average over the 7 days ending on this build, against
+              the 7 days before. A percentage is only shown when both weeks have
+              at least 5 days of data, enough hangs to mean something, and the
+              typical day moved too, not just one spike:{" "}
+              <code>↑</code> an increase, <code>↓</code> a decrease.{" "}
+              <code>newly tracked</code> = absent before, real volume now.
               <span className="eg">
-                e.g. <code>↑74%</code> = ~74% more hang activity than the prior
-                week.
+                Otherwise the badge says what’s missing: <code>partial 1/7d</code>{" "}
+                (too few days observed), <code>no baseline</code>,{" "}
+                <code>no recent data</code>, <code>below cut</code> (recorded days
+                where this hang fell under the history’s top-signature cut),{" "}
+                <code>spike</code> (one day, not sustained) or <code>low volume</code>. Hover a badge for the dates compared, the
+                days behind each week and the change per day.
+                {trendAllPlatforms && (
+                  <> Trends cover all platforms; there is no per-platform history.</>
+                )}
               </span>
             </InfoTip>
           </th>
-          <th>Hang signature (leaf frame)</th>
+          <th>
+            Hang
+            <InfoTip label="Hang">
+              What the hang is, read from its stack: the area of the browser it
+              is in and how the thread was stuck, then (in grey) the frame the
+              stack stopped on and the Firefox code that called it.
+              <span className="eg">
+                e.g. <b>Startup cache: lock wait</b> during JS module loading, over{" "}
+                <code>WaitOnAddress ← StartupCache::GetBuffer</code>. It describes
+                where the thread was, not a confirmed cause.
+              </span>
+            </InfoTip>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -107,7 +133,6 @@ export function HangTable({
           </tr>
         )}
         {visible.map((sig, i) => {
-          const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
           const trend = trendById.get(sig.id) ?? null;
           const badge = trend ? trendBadge(trend) : null;
           return (
@@ -125,16 +150,14 @@ export function HangTable({
               </td>
               <td className="num count">{formatCount(countOf(sig))}</td>
               <td className="trend">
-                {badge && (
-                  <span className={`trend-badge ${badge.tone}`}>{badge.text}</span>
+                {badge && trend && (
+                  <span className={`trend-badge ${badge.tone}`} title={trendEvidence(trend)}>
+                    {badge.text}
+                  </span>
                 )}
               </td>
               <td className="sig">
-                {sig.knownBug ? (
-                  <BugCell bug={sig.knownBug} />
-                ) : (
-                  <Highlight text={frameLabel(leaf)} needle={filter} />
-                )}
+                <HangName profile={profile} sig={sig} filter={filter} />
               </td>
             </tr>
           );
@@ -156,22 +179,5 @@ export function HangTable({
         )}
       </tbody>
     </table>
-  );
-}
-
-function BugCell({ bug }: { bug: { id: number; summary: string; status: string } }) {
-  return (
-    <>
-      <a
-        href={`https://bugzilla.mozilla.org/show_bug.cgi?id=${bug.id}`}
-        title={`${bug.status} — ${bug.summary}`}
-        target="_blank"
-        rel="noreferrer"
-        onClick={(e) => e.stopPropagation()}
-      >
-        Bug {bug.id}
-      </a>{" "}
-      — {bug.summary}
-    </>
   );
 }

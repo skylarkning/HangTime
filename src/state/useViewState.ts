@@ -7,11 +7,44 @@ import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ThreadKind } from "@/data/dataSource";
 import { isPlatform, type Platform } from "@/data/platforms";
+import {
+  isAreaFilter,
+  isContext,
+  isMechanism,
+  type AreaFilter,
+  type ContextId,
+  type MechanismId,
+} from "@/data/hangAreas";
 
 /** Metric the hang list is ranked by. */
 export type SortKey = "time" | "count";
+/** Whether the list keeps hangs a bug already tracks, or only the others. */
+export type BugFilter = "untracked" | "tracked";
 /** Trend bucket the hang list is filtered to. */
-export type TrendFilter = "all" | "regression" | "improvement" | "new";
+export type TrendFilter = "all" | "increase" | "decrease" | "new";
+
+/**
+ * Read the `trend` param. Links from before the rename say `regression` and
+ * `improvement`; they still open the bucket they meant.
+ */
+function parseTrend(value: string | null): TrendFilter {
+  switch (value) {
+    case "increase":
+    case "regression":
+      return "increase";
+    case "decrease":
+    case "improvement":
+      return "decrease";
+    case "new":
+      return "new";
+    default:
+      return "all";
+  }
+}
+
+function parseBug(value: string | null): BugFilter | null {
+  return value === "untracked" || value === "tracked" ? value : null;
+}
 
 export interface ViewState {
   thread: ThreadKind;
@@ -29,6 +62,14 @@ export interface ViewState {
   platform: Platform | null;
   /** Restrict the list to one near-duplicate group (its group key), or null. */
   group: string | null;
+  /** Restrict the list to one area of the browser ("none": unattributed). */
+  area: AreaFilter | null;
+  /** Restrict the list to one mechanism (file I/O, lock wait, ...). */
+  mechanism: MechanismId | null;
+  /** Restrict the list to hangs most of whose reports carry a context. */
+  context: ContextId | null;
+  /** Restrict the list to hangs with, or without, a bug tracking them. */
+  bug: BugFilter | null;
 }
 
 export function useViewState() {
@@ -40,9 +81,15 @@ export function useViewState() {
     filter: params.get("filter") || "",
     selected: params.get("selected"),
     sort: (params.get("sort") as SortKey) || "time",
-    trend: (params.get("trend") as TrendFilter) || "all",
+    trend: parseTrend(params.get("trend")),
     platform: isPlatform(params.get("platform")) ? (params.get("platform") as Platform) : null,
     group: params.get("group"),
+    area: isAreaFilter(params.get("area")) ? (params.get("area") as AreaFilter) : null,
+    mechanism: isMechanism(params.get("mechanism"))
+      ? (params.get("mechanism") as MechanismId)
+      : null,
+    context: isContext(params.get("context")) ? (params.get("context") as ContextId) : null,
+    bug: parseBug(params.get("bug")),
   };
 
   const update = useCallback(

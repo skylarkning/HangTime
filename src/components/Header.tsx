@@ -10,7 +10,7 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: "top-hangs", label: "Top Hangs", to: "/top-hangs" },
-  { id: "overview", label: "Overview", to: "/overview" },
+  { id: "areas", label: "Areas", to: "/areas" },
   { id: "per-site", label: "Per-Site" },
   { id: "alerts", label: "Alerts" },
   { id: "guide", label: "Guide", to: "/guide" },

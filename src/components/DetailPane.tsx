@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   Frame,
   HangSignature,
@@ -7,8 +7,16 @@ import type {
 } from "@/processing/types";
 import type { FramePair } from "@/data/schema";
 import type { TimeseriesIndex } from "@/data/timeseries";
-import { computeTrend, trendBadge } from "@/data/trend";
-import { buildBugReport } from "@/data/bugReport";
+import { computeTrend, trendSentence } from "@/data/trend";
+import { buildBugReport, buildHangSummary } from "@/data/bugReport";
+import { tagCandidates, tagScopes, type TagCandidate, type TagScope } from "@/data/tagScope";
+import {
+  MECHANISMS,
+  areaLabel,
+  frameRole,
+  hangContext,
+  type FrameTable,
+} from "@/data/hangAreas";
 import {
   classifyStack,
   dominantPlatform,
@@ -27,17 +35,26 @@ import {
 import { resolveFrames } from "@/processing/select";
 import { platformBaseline, platformSkew } from "@/data/platformSkew";
 import { platformLabel } from "@/data/platforms";
-import { formatCount, formatDate, formatSeconds } from "@/format";
+import { formatCount, formatDate, formatSeconds, formatShare } from "@/format";
 import { frameLabel, isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
 import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
+import { HangSummary, evidenceMarks } from "./HangSummary";
+import { GroupRelationNote } from "./GroupRelationNote";
+import { shortSymbol } from "./HangName";
+import { explainGroup, type ClassifiedMember } from "@/data/groupRelation";
+import { activityText, hangTitle } from "@/data/hangAreas";
 import { memberStacks } from "@/processing/signatureKey";
+import { useViewState } from "@/state/useViewState";
+import { investigationLink, isLegacyStackId } from "@/state/permalink";
 
 interface DetailPaneProps {
   profile: ProcessedProfile;
   signature: HangSignature | null;
+  /** The `selected` id asked for, which may name a hang not in this build. */
+  requestedId: string | null;
   filter: string;
   timeseries: TimeseriesIndex | undefined;
   onSelect: (id: string) => void;
@@ -45,17 +62,22 @@ interface DetailPaneProps {
   activeGroup: string | null;
   /** Narrow the list to a near-duplicate group, or back to every hang (null). */
   onShowGroup: (groupKey: string | null) => void;
+  /** Set the list's text filter (to list what a bug tag would match). */
+  onFilter?: (text: string) => void;
 }
 
 export function DetailPane({
   profile,
   signature,
+  requestedId,
   filter,
   timeseries,
   onSelect,
   activeGroup,
   onShowGroup,
+  onFilter,
 }: DetailPaneProps) {
+  const { state } = useViewState();
   // A newly selected hang starts at the top of its details, not wherever the
   // previous one had been scrolled to.
   const paneRef = useRef<HTMLDivElement>(null);
@@ -63,23 +85,45 @@ export function DetailPane({
     paneRef.current?.scrollTo(0, 0);
   }, [signature?.id]);
 
+  // A summary's evidence link scrolls the stack to its frame and flashes it.
+  const [flash, setFlash] = useState<number | null>(null);
+  useEffect(() => {
+    if (flash === null) {
+      return;
+    }
+    paneRef.current
+      ?.querySelector(`[data-depth="${flash}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timer = setTimeout(() => setFlash(null), 1500);
+    return () => clearTimeout(timer);
+  }, [flash]);
+
   if (!signature) {
-    return <div className="detail-empty">Select a hang to see its stack.</div>;
+    return (
+      <div className="detail-empty">
+        {requestedId ? (
+          <MissingHang build={profile.date} legacy={isLegacyStackId(requestedId)} />
+        ) : (
+          "Select a hang to see its stack."
+        )}
+      </div>
+    );
   }
   const frames = resolveFrames(profile, signature.frameKeys);
+  const permalink = investigationLink(state, profile.date, signature.id);
 
-  let trendNote: string | undefined;
-  const series = timeseries?.resolveByStack(memberStacks(signature));
-  if (series) {
-    const badge = trendBadge(computeTrend(series, "ms"));
-    trendNote =
-      badge.text === "stable" || badge.text === "new"
-        ? badge.text
-        : `${badge.text} vs prior 7d`;
-  }
+  // The bug comment states the trend with its dates and coverage, so whoever
+  // reads it can judge the claim without opening the dashboard.
+  const series = timeseries?.resolveSignature(signature);
+  const trendNote = series
+    ? trendSentence(computeTrend(series, "ms", { endDate: profile.date }))
+    : undefined;
 
   return (
     <div className="detail-pane" ref={paneRef}>
+      <SectionNav paneRef={paneRef}>
+        <CopyLink href={permalink} build={profile.date} />
+      </SectionNav>
       {signature.knownBug && (
         <div className="detail-section">
           <h3>Bugzilla</h3>
@@ -96,11 +140,19 @@ export function DetailPane({
         </div>
       )}
 
-      {/* The stack first: it says what the hang is, and everything below is
-          about how often and where it happens. */}
-      <StackSection frames={frames} filter={filter} />
+      {/* What the stack shows, then the stack: together they say what the hang
+          is, and everything below is about how often and where it happens. */}
+      <HangSummary signature={signature} frames={frames} onJump={setFlash} />
+      <StackSection
+        key={`stack:${signature.id}`}
+        frames={frames}
+        filter={filter}
+        marks={evidenceMarks(signature.kind)}
+        flash={flash}
+        table={profile.frameTable}
+      />
 
-      <TimeseriesChart index={timeseries} signature={signature} />
+      <TimeseriesChart index={timeseries} signature={signature} endDate={profile.date} />
 
       <LeafGroupSection
         profile={profile}
@@ -112,10 +164,12 @@ export function DetailPane({
       />
 
       <FileBugSection
+        profile={profile}
         signature={signature}
         frames={frames}
-        date={profile.date}
         trendNote={trendNote}
+        permalink={permalink}
+        onFilter={onFilter}
       />
 
       <PlatformSection profile={profile} signature={signature} />
@@ -126,59 +180,367 @@ export function DetailPane({
         timeseries={timeseries}
       />
 
-      <AnnotationStatsSection signature={signature} />
+      <AnnotationStatsSection key={`annotations:${signature.id}`} signature={signature} />
 
     </div>
   );
 }
 
-function StackSection({ frames, filter }: { frames: Frame[]; filter: string }) {
-  const resolver = useSourceResolver().data;
+/** Why a linked hang isn't shown: the build doesn't have it. */
+function MissingHang({ build, legacy }: { build: string; legacy: boolean }) {
   return (
-    <div className="detail-section">
-      <h3>
-        Stack ({frames.length} frames)
-        <InfoTip label="Stack">
-          Frame 0 is where the thread was stuck; each frame below called the one
-          above. Firefox&rsquo;s own code is in normal text, system libraries are
-          dimmed.
-          <span className="eg">
-            <b>Searchfox</b> and <b>GitHub</b> open a JavaScript frame&rsquo;s file at
-            its line. For a C++ frame, <b>Searchfox</b> searches for the function,
-            which leads to its definition: the hang data doesn&rsquo;t carry C++ file
-            and line numbers yet (
-            <a
-              href="https://bugzilla.mozilla.org/show_bug.cgi?id=2081894"
-              target="_blank"
-              rel="noreferrer"
-            >
-              bug 2081894
-            </a>
-            ). Links show the current source, so a line can
-            have moved if the file changed since this build.
+    <>
+      That hang isn&rsquo;t in build {formatDate(build)}.
+      {legacy && (
+        <p className="muted">
+          The link is from an older HangTime, whose links only find a hang on the
+          build they were copied from.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Copies a link to this hang that stays on this build. */
+function CopyLink({ href, build }: { href: string; build: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(href);
+    } catch {
+      return; // clipboard refused; the link itself can still be copied
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <a
+      className="link detail-link"
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        copy();
+      }}
+      title={
+        `A link to this hang on build ${formatDate(build)}, with the list's filters. ` +
+        "It stays on that build when newer ones arrive."
+      }
+    >
+      {copied ? "Copied" : "Copy link"}
+    </a>
+  );
+}
+
+/**
+ * A row of links to the sections this hang has, so a long pane (a 60-frame
+ * stack pushes the history and filing several screens down) is one click from
+ * any part. Sections mark themselves with `data-section`; reading them from
+ * the page keeps this in step with whichever ones rendered.
+ */
+function SectionNav({
+  paneRef,
+  children,
+}: {
+  paneRef: React.RefObject<HTMLDivElement>;
+  /** Pane-wide actions, set at the row's end (Copy link). */
+  children?: React.ReactNode;
+}) {
+  const [sections, setSections] = useState<string[]>([]);
+  useLayoutEffect(() => {
+    const found = [
+      ...(paneRef.current?.querySelectorAll<HTMLElement>("[data-section]") ?? []),
+    ].map((el) => el.dataset.section ?? "");
+    setSections((prev) => (prev.join("|") === found.join("|") ? prev : found));
+  });
+  // With only a couple of sections there's nothing to jump between.
+  const shown = sections.length < 3 ? [] : sections;
+  return (
+    <nav className="section-nav" aria-label="Sections">
+      {shown.map((name) => (
+        <button
+          key={name}
+          onClick={() =>
+            paneRef.current
+              ?.querySelector(`[data-section="${name}"]`)
+              ?.scrollIntoView({ block: "start", behavior: "smooth" })
+          }
+        >
+          {name}
+        </button>
+      ))}
+      {children && <span className="section-nav-end">{children}</span>}
+    </nav>
+  );
+}
+
+/** Stacks up to this long are always shown whole. */
+const FOCUS_MIN_FRAMES = 16;
+/** A focused stack shows at least this many leaf frames... */
+const LEAF_ROWS_MIN = 8;
+/** ...and runs on to an evidence frame up to this depth. */
+const LEAF_ROWS_MAX = 14;
+
+/**
+ * The stack. A long one opens focused: the leaf frames, where the hang
+ * actually is, then only the frames the summary points at or the filter
+ * matches, with each run in between folded into one row that says how many
+ * frames it holds and what kind. "Show all" brings back every frame.
+ *
+ * Remounted per hang (keyed by the caller), so a new selection starts focused.
+ */
+function StackSection({
+  frames,
+  filter,
+  marks,
+  flash,
+  table,
+}: {
+  frames: Frame[];
+  filter: string;
+  /** Depth -> the summary rows that point at that frame. */
+  marks: Map<number, string[]>;
+  flash: number | null;
+  table: FrameTable;
+}) {
+  const resolver = useSourceResolver().data;
+  const [showAll, setShowAll] = useState(false);
+  // Frames brought back one run at a time, or by a summary link.
+  const [revealed, setRevealed] = useState<ReadonlySet<number>>(() => new Set());
+  // A summary link to a folded frame shows it at once (so the pane can scroll
+  // to it in the same render) and keeps it shown once the flash has faded.
+  useEffect(() => {
+    if (flash !== null) {
+      setRevealed((prev) => (prev.has(flash) ? prev : new Set(prev).add(flash)));
+    }
+  }, [flash]);
+
+  const focusable = frames.length > FOCUS_MIN_FRAMES;
+  const focused = useMemo(() => {
+    if (!focusable) {
+      return frames.map(() => true);
+    }
+    let leafEnd = LEAF_ROWS_MIN - 1;
+    for (const depth of marks.keys()) {
+      if (depth < LEAF_ROWS_MAX) {
+        leafEnd = Math.max(leafEnd, depth);
+      }
+    }
+    const matches = frameMatcher(filter);
+    return unfoldShortRuns(
+      frames.map((frame, i) => i <= leafEnd || marks.has(i) || matches(frame)),
+    );
+  }, [frames, focusable, marks, filter]);
+  const visible = showAll
+    ? focused.map(() => true)
+    : unfoldShortRuns(focused.map((v, i) => v || revealed.has(i) || i === flash));
+  const hidden = visible.filter((v) => !v).length;
+  // Whether anything beyond the focused view is showing, to offer going back.
+  const expanded = showAll || visible.some((v, i) => v && !focused[i]);
+
+  // Visible frames as rows, each folded run between them as a single row.
+  const rows: React.ReactNode[] = [];
+  for (let i = 0; i < frames.length; ) {
+    if (visible[i]) {
+      rows.push(
+        <FrameRow
+          key={i}
+          depth={i}
+          frame={frames[i]}
+          filter={filter}
+          marks={marks.get(i)}
+          flash={flash === i}
+          resolver={resolver}
+        />,
+      );
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < frames.length && !visible[i]) {
+      i++;
+    }
+    const run = frames.slice(start, i);
+    rows.push(
+      <button
+        key={`run-${start}`}
+        className="frame frame-run"
+        onClick={() =>
+          setRevealed((prev) => {
+            const next = new Set(prev);
+            for (let d = start; d < start + run.length; d++) {
+              next.add(d);
+            }
+            return next;
+          })
+        }
+        title={`Show frames ${start} to ${start + run.length - 1}`}
+      >
+        <span className="idx">…</span>
+        <span className="name">
+          {run.length} {run.length === 1 ? "frame" : "frames"}: {describeRun(run, table)}
+        </span>
+      </button>,
+    );
+  }
+
+  return (
+    <div className="detail-section" data-section="Stack">
+      <div className="ts-header">
+        <h3>
+          Stack ({frames.length} frames)
+          <InfoTip label="Stack">
+            Frame 0 is where the thread was stuck; each frame below called the one
+            above. Firefox&rsquo;s own code is in normal text, system libraries are
+            dimmed. A long stack opens on the frames that matter: the leaf end, the
+            frames the summary points at, and any the filter matches. Click a folded
+            row, or <b>Show all</b>, for the rest.
+            <span className="eg">
+              <b>Searchfox</b> and <b>GitHub</b> open a JavaScript frame&rsquo;s file at
+              its line. For a C++ frame, <b>Searchfox</b> searches for the function,
+              which leads to its definition: the hang data doesn&rsquo;t carry C++ file
+              and line numbers yet (
+              <a
+                href="https://bugzilla.mozilla.org/show_bug.cgi?id=2081894"
+                target="_blank"
+                rel="noreferrer"
+              >
+                bug 2081894
+              </a>
+              ). Links show the current source, so a line can
+              have moved if the file changed since this build.
+            </span>
+          </InfoTip>
+        </h3>
+        {focusable && (
+          <span className="stack-toggles">
+            {hidden > 0 && (
+              <button className="link" onClick={() => setShowAll(true)}>
+                Show all {frames.length} frames
+              </button>
+            )}
+            {expanded && (
+              <button
+                className="link"
+                onClick={() => {
+                  setShowAll(false);
+                  setRevealed(new Set());
+                }}
+              >
+                Show focused
+              </button>
+            )}
           </span>
-        </InfoTip>
-      </h3>
+        )}
+      </div>
       <div className="stack-trace">
         {frames.length === 0 && <div className="frame">(empty stack)</div>}
-        {frames.map((frame, i) => (
-          <div key={i} className={`frame${isOwnCode(frame) ? "" : " system"}`}>
-            <span className="idx">{i}</span>
-            <span className="name">
-              <Highlight text={frame.funcName} needle={filter} />
-            </span>
-            {frame.libName && (
-              <span className="lib">
-                <Highlight text={frame.libName} needle={filter} />
-              </span>
-            )}
-            <FrameLinks frame={frame} resolver={resolver} />
-          </div>
-        ))}
+        {rows}
       </div>
     </div>
   );
 }
+
+function FrameRow({
+  depth,
+  frame,
+  filter,
+  marks,
+  flash,
+  resolver,
+}: {
+  depth: number;
+  frame: Frame;
+  filter: string;
+  marks: string[] | undefined;
+  flash: boolean;
+  resolver?: SourceResolver;
+}) {
+  return (
+    <div
+      data-depth={depth}
+      className={[
+        "frame",
+        isOwnCode(frame) ? "" : "system",
+        marks ? "marked" : "",
+        flash ? "flash" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <span className="idx">{depth}</span>
+      <span className="name">
+        <Highlight text={frame.funcName} needle={filter} />
+        {marks?.map((mark) => (
+          <span key={mark} className="frame-mark">
+            {mark}
+          </span>
+        ))}
+      </span>
+      {frame.libName && (
+        <span className="lib">
+          <Highlight text={frame.libName} needle={filter} />
+        </span>
+      )}
+      <FrameLinks frame={frame} resolver={resolver} />
+    </div>
+  );
+}
+
+/**
+ * Whether a frame matches the list's text filter, with the list's rule: all
+ * lower-case matches any case (see `stackMatcher`).
+ */
+function frameMatcher(filter: string): (frame: Frame) => boolean {
+  if (!filter) {
+    return () => false;
+  }
+  const caseInsensitive = filter.toLowerCase() === filter;
+  const has = (value: string) =>
+    caseInsensitive ? value.toLowerCase().includes(filter) : value.includes(filter);
+  return (frame) => has(frame.funcName) || has(frame.libName);
+}
+
+/** What a folded run of frames mostly is, so skipping it is an informed choice. */
+function describeRun(run: Frame[], table: FrameTable): string {
+  const counts: Record<string, number> = {};
+  for (const frame of run) {
+    const role = frameRole(table, frame.funcIndex);
+    // Unsymbolicated frames read as glue: neither says what the code does.
+    const name = RUN_ROLES[role === "unknown" ? "glue" : role];
+    counts[name] = (counts[name] ?? 0) + 1;
+  }
+  const [first, second] = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return first[1] >= run.length * 0.7 || !second
+    ? first[0]
+    : `mostly ${first[0]}, some ${second[0]}`;
+}
+
+/** Runs shorter than this are shown: folding them saves no space. */
+const MIN_RUN = 3;
+
+function unfoldShortRuns(visible: boolean[]): boolean[] {
+  const out = [...visible];
+  for (let i = 0; i < out.length; ) {
+    if (out[i]) {
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < out.length && !out[i]) {
+      i++;
+    }
+    if (i - start < MIN_RUN) {
+      out.fill(true, start, i);
+    }
+  }
+  return out;
+}
+
+const RUN_ROLES = {
+  glue: "event loop and glue",
+  system: "system libraries",
+  firefox: "Firefox code",
+};
 
 /** Source links for one stack frame, or nothing for a system library frame. */
 function FrameLinks({ frame, resolver }: { frame: Frame; resolver?: SourceResolver }) {
@@ -223,59 +585,81 @@ function FrameLinks({ frame, resolver }: { frame: Frame; resolver?: SourceResolv
 }
 
 function FileBugSection({
+  profile,
   signature,
   frames,
-  date,
   trendNote,
+  permalink,
+  onFilter,
 }: {
+  profile: ProcessedProfile;
   signature: HangSignature;
   frames: Frame[];
-  date: string;
   trendNote?: string;
+  /** Link to this hang pinned to its build, for the bug's Dashboard line. */
+  permalink: string;
+  onFilter?: (text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [override, setOverride] = useState<BugComponent | null>(null);
+  const [tagChoice, setTagChoice] = useState<string | null>(null);
   const componentList = useComponents();
+  const tracked = !!signature.knownBug;
 
   const platform = dominantPlatform(signature.platformStats);
   const suggestion = useMemo(
     () => classifyStack(frames, platform),
     [frames, platform],
   );
+  // A tracked hang already has its tag; only a new bug needs one chosen.
+  const { candidates, preferred } = useMemo(
+    () => (tracked ? { candidates: [], preferred: 0 } : tagCandidates(profile, signature)),
+    [profile, signature, tracked],
+  );
+  const scopes = useMemo(
+    () => tagScopes(profile, candidates.map((c) => c.tag)),
+    [profile, candidates],
+  );
 
   // A new selection means a new suggestion; drop any override from the last one.
-  useEffect(() => setOverride(null), [signature.id]);
+  useEffect(() => {
+    setOverride(null);
+    setTagChoice(null);
+  }, [signature.id]);
 
   const suggested =
     suggestion && isKnownComponent(componentList.data, suggestion)
       ? { product: suggestion.product, component: suggestion.component }
       : null;
   const target = override ?? suggested;
+  const candidate = candidates.find((c) => c.tag === tagChoice) ?? candidates[preferred];
+  const tag = candidate?.tag ?? "";
 
-  const report = buildBugReport({
+  const facts = {
     frames,
+    kind: signature.kind,
     count: signature.count,
     durationMs: signature.duration,
-    date: formatDate(date),
+    date: formatDate(profile.date),
     trendNote,
-    permalink: window.location.href,
-    target: target ?? undefined,
+    permalink,
+    contexts: hangContext(signature.annotationStats, signature.count),
     platformNote: platformNote(signature.platformStats),
-  });
+  };
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(report.comment);
+  const copy = async (text: string) => {
+    await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
   if (signature.knownBug) {
     return (
-      <div className="detail-section">
+      <div className="detail-section" data-section="File a bug">
         <h3>File a bug</h3>
         <p className="muted">
           Already tracked by Bug {signature.knownBug.id}.{" "}
-          <button className="link" onClick={copy}>
+          <button className="link" onClick={() => copy(buildHangSummary(facts))}>
             {copied ? "Copied" : "Copy hang summary"}
           </button>{" "}
           to add current data to it.
@@ -284,26 +668,34 @@ function FileBugSection({
     );
   }
 
+  const report = buildBugReport({ ...facts, tag, target: target ?? undefined });
+
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="File a bug">
       <h3>
         File a bug
         <InfoTip label="File a bug">
-          Files straight into the chosen component with the summary, stack,
-          prevalence and whiteboard tag already filled in.
+          Files straight into the chosen component with the summary, what the stack
+          shows, the stack, prevalence and whiteboard tag already filled in.
           <span className="eg">
             The component is guessed by reading the stack from the leaf outwards
             for the innermost frame that names an owner, skipping plumbing like
             binding glue and the IPC transport. On the hangs already tracked by
             a bug it picks the component those bugs were really filed in about
-            four times in five &mdash; so check it before filing.
+            four times in five, so check it before filing.
+          </span>
+          <span className="eg">
+            The whiteboard tag folds every hang with a matching function name into
+            the bug, so it is taken from a frame specific to this hang (the code
+            that made the blocking call) rather than the primitive the thread was
+            stuck in. The line below it says what the tag would match on this build.
           </span>
         </InfoTip>
       </h3>
       <p className="muted">
         {suggestion
           ? "HangTime has suggested the following component for this hang signature, you may also change this if you feel this is wrong."
-          : "HangTime couldn’t tell which component owns this hang — the stack is all shared plumbing. Please pick one."}
+          : "HangTime couldn’t tell which component owns this hang: the stack is all shared plumbing. Please pick one."}
       </p>
       <ComponentPicker
         value={target}
@@ -312,17 +704,46 @@ function FileBugSection({
       />
       {suggestion && (
         <p className="bug-why">
-          <span className={`chip ${CONFIDENCE_TONE[suggestion.confidence]}`}>
-            {suggestion.confidence} confidence
+          <span>
+            Suggested from frame {suggestion.frameIndex},{" "}
+            <code>{shortName(suggestion.frameName)}</code>, which matched{" "}
+            <code>{suggestion.matched}</code>.
           </span>
-          matched <code>{suggestion.matched}</code> in frame{" "}
-          {suggestion.frameIndex}, <code>{shortName(suggestion.frameName)}</code>
+          {suggestion.caveat && (
+            <span
+              className="chip amber"
+              title={
+                suggestion.caveat === "broad-rule"
+                  ? "The matching rule names a namespace or layer shared by many components"
+                  : "The deciding frame is far from where the thread was stuck"
+              }
+            >
+              {suggestion.caveat === "broad-rule" ? "broad match" : "deep in the stack"}: check it
+            </span>
+          )}
         </p>
       )}
       <p className="muted">
         Files with whiteboard tag <code>{report.whiteboard}</code>, so the
         dashboard auto-merges matching hangs from the next run.
       </p>
+      {candidate && (
+        <TagScopeNote
+          candidate={candidate}
+          scope={scopes.get(tag)}
+          signature={signature}
+          onFilter={onFilter}
+        />
+      )}
+      {candidates.length > 1 && (
+        <TagPicker
+          candidates={candidates}
+          scopes={scopes}
+          total={profile.totalDuration}
+          value={tag}
+          onChange={setTagChoice}
+        />
+      )}
       <div className="report-actions">
         <a
           className={`btn${target ? "" : " disabled"}`}
@@ -333,7 +754,7 @@ function FileBugSection({
         >
           {target ? `File in ${target.component}` : "Pick a component first"}
         </a>
-        <button className="btn secondary" onClick={copy}>
+        <button className="btn secondary" onClick={() => copy(report.comment)}>
           {copied ? "Copied" : "Copy comment"}
         </button>
       </div>
@@ -341,7 +762,142 @@ function FileBugSection({
   );
 }
 
-const CONFIDENCE_TONE = { high: "green", medium: "amber", low: "neutral" };
+/** A tag matching more than this many signatures folds in more than one hang. */
+const BROAD_SIGNATURES = 5;
+/** ... or more than this multiple of the hang's own time. */
+const BROAD_TIME = 3;
+/** Matched time outside the hang's own area past which it's likely several problems. */
+const MIXED_SHARE = 0.3;
+/** ... and past which a wide tag is worth a second look. */
+const MIXED_NOTE = 0.1;
+
+/**
+ * What the chosen tag would fold into the bug on this build, and a warning when
+ * that is more than this hang: a shared primitive, or signatures spread across
+ * several areas.
+ */
+function TagScopeNote({
+  candidate,
+  scope,
+  signature,
+  onFilter,
+}: {
+  candidate: TagCandidate;
+  scope: TagScope | undefined;
+  signature: HangSignature;
+  onFilter?: (text: string) => void;
+}) {
+  if (!scope) {
+    return null;
+  }
+  const { area } = signature.kind;
+  const inArea = scope.msByArea.get(area) ?? 0;
+  const outside = scope.ms > 0 ? 1 - inArea / scope.ms : 0;
+  const wide = scope.signatures > BROAD_SIGNATURES || scope.ms > BROAD_TIME * signature.duration;
+  const mixed = scope.signatures > BROAD_SIGNATURES && outside >= MIXED_SHARE;
+  const pct = (share: number) =>
+    share.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 1 });
+  const { generic } = candidate;
+
+  let warning: React.ReactNode = null;
+  if (generic) {
+    const what =
+      generic.kind === "mechanism"
+        ? `a ${MECHANISMS[generic.mechanism].phrase} frame`
+        : generic.kind === "system"
+          ? "system library code"
+          : "shared glue code";
+    warning = (
+      <>
+        <code>{candidate.tag}</code> is {what} that many unrelated hangs pass through,
+        so this tag would fold them into one bug. Pick a frame specific to this hang.
+      </>
+    );
+  } else if (mixed) {
+    warning = (
+      <>
+        Its {scope.signatures.toLocaleString()} signatures span several areas: only{" "}
+        {pct(1 - outside)} of their hang time is in {areaLabel(area)}, so they may be
+        different problems. A frame closer to this hang&rsquo;s own code would be
+        narrower.
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className={`tag-scope${warning ? " warn" : ""}`}>
+        This tag would match <b>{scope.signatures.toLocaleString()}</b> signature
+        {scope.signatures === 1 ? "" : "s"} and <b>{pct(scope.share)}</b> of observed hang
+        time on this build
+        {scope.trackedElsewhere > 0 && (
+          <>
+            , {scope.trackedElsewhere.toLocaleString()} of them already tracked by other
+            bugs
+          </>
+        )}
+        .
+        {onFilter && scope.signatures > 1 && (
+          <>
+            {" "}
+            <button className="link" onClick={() => onFilter(candidate.tag)}>
+              List them
+            </button>
+          </>
+        )}
+      </p>
+      {warning && <p className="tag-warning">{warning}</p>}
+      {!warning && wide && outside >= MIXED_NOTE && (
+        <p className="muted tag-note">
+          It folds {scope.signatures.toLocaleString()} signatures into one bug, with{" "}
+          {pct(1 - outside)} of their time in {areaLabel(area)}. Check they are the same
+          problem before filing.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** The frame the whiteboard tag is taken from, with what each would match. */
+function TagPicker({
+  candidates,
+  scopes,
+  total,
+  value,
+  onChange,
+}: {
+  candidates: TagCandidate[];
+  scopes: Map<string, TagScope>;
+  total: number;
+  value: string;
+  onChange: (tag: string) => void;
+}) {
+  const option = (c: TagCandidate) => {
+    const scope = scopes.get(c.tag);
+    const n = scope?.signatures ?? 0;
+    const matches = `${n.toLocaleString()} signature${n === 1 ? "" : "s"}`;
+    return (
+      <option key={c.tag} value={c.tag}>
+        {`frame ${c.depth}: ${c.tag}  (${matches}, ${formatShare(scope?.ms ?? 0, total)})`}
+      </option>
+    );
+  };
+  const specific = candidates.filter((c) => !c.generic);
+  const shared = candidates.filter((c) => c.generic);
+  return (
+    <label className="tag-picker">
+      <span>Tag frame</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {specific.length > 0 && (
+          <optgroup label="Specific to this hang">{specific.map(option)}</optgroup>
+        )}
+        {shared.length > 0 && (
+          <optgroup label="Shared low-level frames (broad)">{shared.map(option)}</optgroup>
+        )}
+      </select>
+    </label>
+  );
+}
 
 /** Drop the argument list so a deciding frame reads as a name. */
 function shortName(funcName: string): string {
@@ -486,6 +1042,18 @@ function LeafGroupSection({
     return [...byVariant.values()].sort((a, b) => b.duration - a.duration);
   }, [members, signature.stackKey]);
 
+  // Each member's own description and the frame that sets it apart, so a row
+  // can say what it is and how it differs, not only where it branches off.
+  const classifiedByKey = useMemo(() => {
+    const map = new Map<string, ClassifiedMember>();
+    if (group) {
+      for (const m of explainGroup(profile, group).members) {
+        map.set(m.member.key, m);
+      }
+    }
+    return map;
+  }, [profile, group]);
+
   // The section starts folded to the group name; a compare selection (max two)
   // drives the side-by-side stack diff. All reset when the selected signature
   // moves to a different group.
@@ -516,13 +1084,26 @@ function LeafGroupSection({
   const rawLeafLabel = (m: ResolvedGroupMember): string =>
     frameLabel(resolveFrames(profile, m.frameKeys.slice(0, 1))[0]);
   const singleVariant = variants.length === 1;
+  // The frame that sets a variant apart from the rest of the group.
+  const variantFrame = (v: GroupVariant): FramePair | null =>
+    classifiedByKey.get(v.rep.key)?.distinguishing ?? v.firstUniqueFrame;
   const variantLabel = (v: GroupVariant): string => {
-    const f = v.firstUniqueFrame;
+    const f = variantFrame(v);
     if (!f) {
-      return "identical (differs only in system / event-loop frames)";
+      return "same meaningful stack (differs only in system or event-loop frames)";
     }
-    return f[1] ? `${f[0]} ${f[1]}` : f[0];
+    return f[1] ? `${shortSymbol(f[0])} ${f[1]}` : shortSymbol(f[0]);
   };
+  // "Startup cache: lock wait during JS module loading", for a member row.
+  const describe = (m: ResolvedGroupMember): string => {
+    const kind = classifiedByKey.get(m.key)?.kind;
+    if (!kind) {
+      return "";
+    }
+    const activity = activityText(kind);
+    return activity ? `${hangTitle(kind)} ${activity}` : hangTitle(kind);
+  };
+  const share = (ms: number) => formatShare(ms, group.totalMs);
   // A group member's stack belongs to a displayed signature (its own row, or a
   // bug it was folded into); clicking inspects that signature.
   const selectMember = (m: ResolvedGroupMember) => {
@@ -566,9 +1147,10 @@ function LeafGroupSection({
             <button className="group-member-main" onClick={() => selectMember(m)}>
               <span className="member-arrow">↳</span>
               <Highlight text={rawLeafLabel(m)} needle={filter} />
+              <span className="variant-title">{describe(m)}</span>
             </button>
-            <span className="group-member-stat">
-              {formatSeconds(m.ms)}s · {formatCount(m.count)}
+            <span className="group-member-stat" title="Share of the group's hang time">
+              {share(m.ms)} · {formatSeconds(m.ms)}s · {formatCount(m.count)}
             </span>
           </li>
         );
@@ -577,7 +1159,7 @@ function LeafGroupSection({
   );
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Near-duplicates">
       <h3>
         Near-duplicate group
         <InfoTip label="Near-duplicate group">
@@ -587,9 +1169,17 @@ function LeafGroupSection({
           same Firefox problem collapse together even when the raw leaf (a sleep,
           a <code>memcpy</code>, a <code>free</code>) differs. <b>Show in the
           list</b> narrows the hang list on the left to the group&rsquo;s stacks.{" "}
-          <b>Compare stacks</b> opens the distinct variants (each labeled by its
-          branch frame) here, so you can tick two and diff them to confirm the
-          merge is right.
+          <b>Compare stacks</b> opens the distinct variants (each labeled by the
+          frame that sets it apart, its own description, and its share of the
+          group&rsquo;s time) here, so you can tick two and diff them to confirm
+          the merge is right.
+          <span className="eg">
+            Sharing a frame isn&rsquo;t sharing a cause. The label under the name says
+            how alike the stacks are: <b>Same bug</b>; <b>Similar call paths</b> (mostly
+            one caller, likely related); <b>Shared blocking mechanism</b> (one wait
+            reached from different callers, possibly several problems); or{" "}
+            <b>Shared code, different callers</b>.
+          </span>
         </InfoTip>
       </h3>
       <div className="group-head">
@@ -606,6 +1196,7 @@ function LeafGroupSection({
           </span>
         )}
       </div>
+      <GroupRelationNote profile={profile} group={group} />
       <div className="group-actions">
         {activeGroup === groupKey ? (
           <button className="btn secondary" onClick={() => onShowGroup(null)}>
@@ -657,15 +1248,18 @@ function LeafGroupSection({
                     <button
                       className="group-member-main"
                       onClick={() => selectMember(v.rep)}
+                      title={variantFrame(v)?.join(" ")}
                     >
                       <span className="member-arrow">↳</span>
                       <Highlight text={variantLabel(v)} needle={filter} />
                       {v.memberCount > 1 && (
                         <span className="variant-count">×{v.memberCount}</span>
                       )}
+                      <span className="variant-title">{describe(v.rep)}</span>
                     </button>
-                    <span className="group-member-stat">
-                      {formatSeconds(v.duration)}s · {formatCount(v.count)}
+                    <span className="group-member-stat" title="Share of the group's hang time">
+                      {share(v.duration)} · {formatSeconds(v.duration)}s ·{" "}
+                      {formatCount(v.count)}
                     </span>
                   </li>
                 );
@@ -782,7 +1376,7 @@ function PlatformSection({
   }
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Platform">
       <h3>
         Platform
         <InfoTip label="Platform">
@@ -841,10 +1435,10 @@ function PlatformSection({
   );
 }
 
-type AffectedWindowKey = "today" | "d7" | "d28" | "d365";
+type AffectedWindowKey = "build" | "d7" | "d28" | "d365";
 
 const AFFECTED_OPTIONS: { key: AffectedWindowKey; label: string }[] = [
-  { key: "today", label: "Today" },
+  { key: "build", label: "This build" },
   { key: "d7", label: "7-Day" },
   { key: "d28", label: "28-Day" },
   { key: "d365", label: "365-Day" },
@@ -859,55 +1453,73 @@ function AffectedClientsSection({
   signature: HangSignature;
   timeseries: TimeseriesIndex | undefined;
 }) {
-  const [window, setWindow] = useState<AffectedWindowKey>("today");
-  const resolved = timeseries?.resolveAffectedByStack(memberStacks(signature)) ?? null;
-  const hasCrossDay = !!resolved;
+  const [picked, setPicked] = useState<AffectedWindowKey>("build");
+  const resolved = timeseries?.resolveAffectedSignature(signature) ?? null;
 
-  // A stale window selection (e.g. cross-day unavailable) falls back to Today.
-  const active: AffectedWindowKey = window !== "today" && !hasCrossDay ? "today" : window;
+  // Only measured counts are shown: the build's come from a --client-metrics
+  // run, the windows from a timeseries rolled up from such runs. Anything
+  // missing is said to be missing, never estimated.
+  const buildUsers = signature.affectedClients;
+  const buildTotal = profile.affectedClientsTotal;
+  const hasBuild = buildUsers != null && buildTotal != null;
+  const available = (key: AffectedWindowKey) => (key === "build" ? hasBuild : !!resolved);
+  const options = AFFECTED_OPTIONS.filter((o) => available(o.key));
+  // A stale choice (a window this hang has no cross-day data for, say) falls
+  // back to the first one that has data.
+  const active = available(picked) ? picked : options[0]?.key;
+
+  if (!active) {
+    return (
+      <div className="detail-section">
+        <h3>Clients affected</h3>
+        <p className="muted">Affected-client data unavailable for this build.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Clients">
       <div className="ts-header">
         <h3>
-          Affected clients
-          <InfoTip label="Affected clients">
-            Distinct users who hit this hang, estimated with HyperLogLog.{" "}
-            <b>Today</b> is the current build's count. The <b>7 / 28 / 365-Day</b>{" "}
-            windows merge per-day HyperLogLog sketches across the rolling
-            timeseries, so a user who hangs on many days is counted once; the
-            denominator is all distinct users seen in that same window.
-            {resolved?.approximate && (
-              <span className="eg">
-                This row merges several stacks; their user sets can’t be unioned
-                from the published counts, so cross-day totals are summed as an
-                upper bound.
-              </span>
-            )}
+          Clients affected
+          <InfoTip label="Clients affected">
+            Distinct clients that hit this hang, estimated with HyperLogLog, as a
+            share of the clients that sent any hang report for the same build or
+            window. That is the population HangTime observes, not all Nightly
+            users: clients that never reported a hang aren&rsquo;t in it, and
+            sampling isn&rsquo;t accounted for, so this isn&rsquo;t a rate of
+            affected users.
+            <span className="eg">
+              <b>This build</b> counts one build&rsquo;s reports. The{" "}
+              <b>7 / 28 / 365-Day</b> windows merge per-day sketches, so a client
+              that hangs on many days counts once. A row covering several stacks
+              adds up each stack&rsquo;s count, and one client can hit several of
+              them, so that sum is shown as <em>up to</em>: an upper bound.
+            </span>
           </InfoTip>
-          {profile.affectedClientsSynthetic && (
-            <span className="pct"> (synthetic data)</span>
-          )}
         </h3>
-        <select
-          className="affected-window"
-          value={active}
-          onChange={(e) => setWindow(e.target.value as AffectedWindowKey)}
-          title={hasCrossDay ? undefined : "Cross-day windows need the timeseries artifact"}
-        >
-          {AFFECTED_OPTIONS.map((o) => (
-            <option
-              key={o.key}
-              value={o.key}
-              disabled={o.key !== "today" && !hasCrossDay}
-            >
-              {o.label}
-            </option>
-          ))}
-        </select>
+        {options.length > 1 && (
+          <select
+            className="affected-window"
+            value={active}
+            onChange={(e) => setPicked(e.target.value as AffectedWindowKey)}
+          >
+            {options.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
-      {active === "today" ? (
-        <TodayAffected profile={profile} signature={signature} />
+      {active === "build" ? (
+        <AffectedShare
+          users={buildUsers!}
+          total={buildTotal!}
+          upperBound={memberStacks(signature).length > 1}
+          scope="for this build"
+          note="HyperLogLog estimate"
+        />
       ) : (
         <WindowAffected resolved={resolved} windowKey={active} />
       )}
@@ -915,19 +1527,28 @@ function AffectedClientsSection({
   );
 }
 
-/** Distinct affected clients for the current build day (HyperLogLog). */
-function TodayAffected({
-  profile,
-  signature,
+/**
+ * One affected-client share, worded for what the denominator really is: the
+ * clients that sent hang reports, not every user.
+ */
+function AffectedShare({
+  users,
+  total,
+  upperBound,
+  scope,
+  note,
 }: {
-  profile: ProcessedProfile;
-  signature: HangSignature;
+  users: number;
+  total: number;
+  /** Summed across stacks, so a client can be counted more than once. */
+  upperBound: boolean;
+  /** Which reports the denominator covers, e.g. "for this build". */
+  scope: string;
+  note: string;
 }) {
-  const users = signature.affectedClients;
-  const total = profile.affectedClientsTotal;
   const pct =
     total > 0
-      ? (users / total).toLocaleString(undefined, {
+      ? Math.min(users / total, 1).toLocaleString(undefined, {
           style: "percent",
           minimumFractionDigits: 2,
         })
@@ -935,55 +1556,54 @@ function TodayAffected({
   return (
     <ul className="annotation-list">
       <li>
-        <code>Users affected</code>{" "}
+        <code>Clients affected</code>{" "}
         <span className="pct">
-          {pct} ({users.toLocaleString()} of {total.toLocaleString()} distinct
-          users this build)
+          {upperBound && "up to "}
+          {pct} of hang-reporting clients ({users.toLocaleString()} of{" "}
+          {total.toLocaleString()} that sent hang reports {scope})
         </span>
       </li>
       <li>
-        <span className="pct">HyperLogLog estimate.</span>
+        <span className="pct">
+          {note}
+          {upperBound ? "; summed across this row's stacks, so an upper bound" : ""}.
+        </span>
       </li>
     </ul>
   );
 }
 
-/** Distinct users affected over one trailing window (HLL-merged). */
+/** Distinct clients affected over one trailing window (HLL-merged). */
 function WindowAffected({
   resolved,
   windowKey,
 }: {
-  resolved: ReturnType<TimeseriesIndex["resolveAffected"]>;
+  resolved: ReturnType<TimeseriesIndex["resolveAffectedSignature"]>;
   windowKey: "d7" | "d28" | "d365";
 }) {
   const win = resolved?.windows.find((w) => w.key === windowKey);
   if (!win) {
-    return <p className="muted">No cross-day data for this hang.</p>;
+    return <p className="muted">No cross-day client data for this hang.</p>;
   }
-  const pct = win.pct.toLocaleString(undefined, {
-    style: "percent",
-    minimumFractionDigits: 2,
-  });
+  const days = win.label.replace("-Day", "");
   return (
-    <ul className="annotation-list">
-      <li>
-        <code>Users affected</code>{" "}
-        <span className="pct">
-          {pct} ({win.users.toLocaleString()} of {win.totalUsers.toLocaleString()}{" "}
-          distinct users)
-        </span>
-      </li>
-      <li>
-        <span className="pct">
-          HyperLogLog estimate, merged across the trailing {win.label.replace("-Day", "")}{" "}
-          days{resolved?.approximate ? " · summed across merged stacks (upper bound)" : ""}.
-        </span>
-      </li>
-    </ul>
+    <AffectedShare
+      users={win.users}
+      total={win.totalUsers}
+      upperBound={!!resolved?.approximate}
+      scope={`over the last ${days} days`}
+      note={`HyperLogLog estimate, merged across the trailing ${days} days`}
+    />
   );
 }
 
+/**
+ * The hang's annotations: one line of the context they add up to, then every
+ * key and value, with the share of reports carrying it, on demand. Remounted
+ * per hang, so a new selection starts folded.
+ */
 function AnnotationStatsSection({ signature }: { signature: HangSignature }) {
+  const [open, setOpen] = useState(false);
   const entries = Object.entries(signature.annotationStats).sort(
     (a, b) => b[1].totalCount - a[1].totalCount,
   );
@@ -995,53 +1615,80 @@ function AnnotationStatsSection({ signature }: { signature: HangSignature }) {
       style: "percent",
       minimumFractionDigits: 1,
     });
+  const share = (n: number) =>
+    n.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 1 });
+  const contexts = hangContext(signature.annotationStats, signature.count);
 
   return (
-    <div className="detail-section">
+    <div className="detail-section" data-section="Annotations">
       <h3>
         Hang annotations
         <InfoTip label="Hang annotations">
           Context flags Firefox recorded with the hang (e.g.{" "}
           <code>UserInteracting</code> = the user was actively interacting). The
-          percentage is the share of this signature’s hangs carrying that flag.
+          percentage is the share of this signature&rsquo;s reports carrying that flag.
+          <span className="eg">
+            A report without a flag is unknown rather than &ldquo;no&rdquo;: Firefox
+            only records a flag when it is set, and older builds record fewer of
+            them. So <code>UserInteracting 60%</code> means at least 60% of reports
+            came while the user was interacting.
+          </span>
         </InfoTip>
       </h3>
-      <ul className="annotation-list">
-        {entries.map(([key, stat]) => {
-          const values = Object.entries(stat.values);
-          let detail: React.ReactNode;
-          if (values.length === 1 && values[0][0] === "true") {
-            detail = `${pct(values[0][1])} (${values[0][1].toLocaleString()} hangs)`;
-          } else if (values.length === 1) {
-            detail = (
-              <>
-                {pct(values[0][1])} ({values[0][1].toLocaleString()} hangs:{" "}
-                <code>{values[0][0]}</code>)
-              </>
+      <p className="annotation-summary">
+        {contexts.length > 0 ? (
+          contexts.map((c) => (
+            <span key={c.key} title={`${share(c.share)} of reports carry ${c.key}`}>
+              {c.label} {share(c.share)}
+            </span>
+          ))
+        ) : (
+          <span className="summary-none">No context flags set</span>
+        )}
+      </p>
+      <button className="link annotation-toggle" onClick={() => setOpen((o) => !o)}>
+        {open
+          ? "Hide the annotations"
+          : `Show all ${entries.length} annotation${entries.length === 1 ? "" : "s"}`}
+      </button>
+      {open && (
+        <ul className="annotation-list">
+          {entries.map(([key, stat]) => {
+            const values = Object.entries(stat.values);
+            let detail: React.ReactNode;
+            if (values.length === 1 && values[0][0] === "true") {
+              detail = `${pct(values[0][1])} (${values[0][1].toLocaleString()} hangs)`;
+            } else if (values.length === 1) {
+              detail = (
+                <>
+                  {pct(values[0][1])} ({values[0][1].toLocaleString()} hangs:{" "}
+                  <code>{values[0][0]}</code>)
+                </>
+              );
+            } else {
+              detail = (
+                <>
+                  {pct(stat.totalCount)} ({stat.totalCount.toLocaleString()} hangs:{" "}
+                  {values
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([v, c], idx) => (
+                      <span key={v}>
+                        {idx > 0 && ", "}
+                        {c.toLocaleString()} <code>{v}</code>
+                      </span>
+                    ))}
+                  )
+                </>
+              );
+            }
+            return (
+              <li key={key}>
+                <code>{key}</code> <span className="pct">{detail}</span>
+              </li>
             );
-          } else {
-            detail = (
-              <>
-                {pct(stat.totalCount)} ({stat.totalCount.toLocaleString()} hangs:{" "}
-                {values
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([v, c], idx) => (
-                    <span key={v}>
-                      {idx > 0 && ", "}
-                      {c.toLocaleString()} <code>{v}</code>
-                    </span>
-                  ))}
-                )
-              </>
-            );
-          }
-          return (
-            <li key={key}>
-              <code>{key}</code> <span className="pct">{detail}</span>
-            </li>
-          );
-        })}
-      </ul>
+          })}
+        </ul>
+      )}
     </div>
   );
 }

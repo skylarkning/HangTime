@@ -15,7 +15,13 @@
  */
 
 import type { FramePair, FuncIndex, Profile, Thread } from "@/data/schema";
-import { canonicalKey, canonicalKeyFromFrames } from "./signatureKey";
+import {
+  canonicalKey,
+  canonicalKeyFromFrames,
+  frameHashes,
+  stableStackId,
+} from "./signatureKey";
+import { buildFrameTable, classifyStack, type HangKind } from "@/data/hangAreas";
 import type {
   AnnotationStats,
   HangSignature,
@@ -27,6 +33,23 @@ import type {
 
 /** Maps a bug `[bhr:...]` signature substring to its bug. */
 export type BugMap = Map<string, KnownBug>;
+
+/** One distinct stack's hang time and count on the build. */
+interface StackTotals {
+  ms: number;
+  count: number;
+}
+
+/** Placeholder until a signature's final stack is classified. */
+const UNCLASSIFIED: HangKind = {
+  mechanism: "unknown",
+  mechanismFrame: -1,
+  area: null,
+  areaFrame: -1,
+  activity: null,
+  activityFrame: -1,
+  callerFrame: -1,
+};
 
 /** Pick the thread to analyze: the main-process Gecko thread, else the first. */
 function pickThread(profile: Profile): Thread | undefined {
@@ -178,6 +201,7 @@ export function buildSignatures(
   );
 
   const bugByFunc = buildBugByFunc(bugs, funcNames);
+  const hashes = frameHashes(funcNames, libNames);
   const bySignature = new Map<string, HangSignature>();
   // A bug's chosen representative signature, so distinct stacks merge into it.
   const byBug = new Map<number, HangSignature>();
@@ -191,19 +215,24 @@ export function buildSignatures(
   // and samples repeat stacks heavily -- 342k samples over 190k distinct stacks
   // on a production day, so 44% of that work is redundant. The job interns the
   // stackTable, so a node id identifies a frame sequence exactly; memoize on it.
-  const framesByNode = new Map<number, { frameKeys: number[]; stackKey: string }>();
+  // Each distinct stack also keeps its own totals, so a bug row can say how
+  // much of it each member stack holds (the history covers some members only).
+  const framesByNode = new Map<number, StackTotals & { frameKeys: number[]; stackKey: string }>();
+  const membersOf = new Map<HangSignature, StackTotals[]>();
 
   for (let i = 0; i < sampleCount; i++) {
     const stackNode = sampleStack[i];
     let resolved = framesByNode.get(stackNode);
     if (resolved === undefined) {
       const frames = reconstructStack(thread, i);
-      resolved = { frameKeys: frames, stackKey: frames.join(",") };
+      resolved = { frameKeys: frames, stackKey: frames.join(","), ms: 0, count: 0 };
       framesByNode.set(stackNode, resolved);
     }
     const { frameKeys, stackKey } = resolved;
     const duration = Math.round(sampleHangMs[i]);
     const count = Math.round(sampleHangCount[i]);
+    resolved.ms += duration;
+    resolved.count += count;
     const annotations = readAnnotations(thread, i);
     const platform = readPlatform(thread, i);
 
@@ -239,6 +268,7 @@ export function buildSignatures(
         addCount(bugHang.platformMs, platform, duration);
         // Distinct stack folded into the bug — record it as a member series.
         (bugHang.memberStackKeys ??= [bugHang.stackKey]).push(stackKey);
+        membersOf.get(bugHang)?.push(resolved);
         bySignature.set(stackKey, bugHang);
         continue;
       }
@@ -248,7 +278,7 @@ export function buildSignatures(
     const annotationStats: AnnotationStats = {};
     addAnnotations(annotationStats, annotations, count);
     const sig: HangSignature = {
-      id: bug ? `bug:${bug.id}` : stackKey,
+      id: bug ? `bug:${bug.id}` : stableStackId(frameKeys, hashes),
       sampleIndex: i,
       frameKeys,
       duration,
@@ -258,13 +288,21 @@ export function buildSignatures(
       annotationStats,
       platformStats: platform ? { [platform]: count } : {},
       platformMs: platform ? { [platform]: duration } : {},
-      affectedClients: 0,
       knownBug: bug,
+      kind: UNCLASSIFIED,
     };
     signatures.push(sig);
     bySignature.set(stackKey, sig);
     if (bug) {
       byBug.set(bug.id, sig);
+      membersOf.set(sig, [resolved]);
+    }
+  }
+
+  for (const [sig, members] of membersOf) {
+    if (sig.memberStackKeys) {
+      sig.memberStackMs = members.map((m) => m.ms);
+      sig.memberStackCounts = members.map((m) => m.count);
     }
   }
 
@@ -277,7 +315,19 @@ export function buildSignatures(
     totalCount += sig.count;
   }
 
-  const affected = attachAffectedClients(profile, signatures, funcNames, libNames);
+  const affectedClientsTotal = attachAffectedClients(
+    profile,
+    signatures,
+    funcNames,
+    libNames,
+  );
+
+  // Classified once the representative stacks are final: merging can swap a
+  // signature's representative for a longer-running sample.
+  const frameTable = buildFrameTable(funcNames, libNames);
+  for (const sig of signatures) {
+    sig.kind = classifyStack(sig.frameKeys, frameTable, libNames);
+  }
 
   // Stack key -> the displayed signature it belongs to, so clicking a group
   // member (which may be a stack folded into a bug row) can select it.
@@ -298,11 +348,11 @@ export function buildSignatures(
     signatures,
     totalDuration,
     totalCount,
-    affectedClientsTotal: affected.total,
-    affectedClientsSynthetic: affected.synthetic,
+    affectedClientsTotal,
     leafGroupByKey: buildLeafGroupLookup(profile, thread, funcNames, libNames),
     groupsByKey: buildResolvedGroups(profile, thread, funcNames, libNames),
     sigIdByKey,
+    frameTable,
   };
 }
 
@@ -334,6 +384,7 @@ function buildResolvedGroups(
     byGroup[groupKey] = {
       groupKey,
       displayName: group.displayName,
+      leafFrame: group.leafFrame,
       memberCount: group.memberCount,
       totalMs: group.totalMs,
       totalCount: group.totalCount,
@@ -394,61 +445,39 @@ function buildLeafGroupLookup(
   return byKey;
 }
 
-/** Deterministic 32-bit FNV-1a hash, for reproducible synthetic perturbation. */
-function hashString(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
 /**
- * Attach the per-signature distinct affected-client count (HyperLogLog) and the
- * daily total.
+ * Attach the per-signature distinct affected-client count (HyperLogLog) from a
+ * `--client-metrics` artifact, returning the build's distinct-client total.
  *
- * With a real `--client-metrics` artifact, sum each signature's member stacks
- * (a bug-merged row is an upper bound, since per-signature sketches aren't
- * unioned here - a follow-up). Without one, synthesize a dev-only number:
- * ~count/3 nudged by a deterministic +/- ~2% to mimic HLL approximation error.
+ * A row folding several stacks (a bug) sums its members' counts. Their client
+ * sets overlap and the published counts can't be unioned, so that sum is an
+ * upper bound rather than a distinct count.
+ *
+ * Without the artifact nothing is attached and the total is null: there is no
+ * number to show, and the detail pane says so rather than inventing one.
  */
 function attachAffectedClients(
   profile: Profile,
   signatures: HangSignature[],
   funcNames: string[],
   libNames: string[],
-): { total: number; synthetic: boolean } {
+): number | null {
   const artifact = profile.affectedClients;
-  if (artifact) {
-    // The aggregation job keys its counts by canonical key, so build those
-    // here. They stay inside the worker, which is the point: it is shipping
-    // them to the main thread that does not scale.
-    for (const sig of signatures) {
-      let hll = 0;
-      for (const key of sig.memberStackKeys ?? [sig.stackKey]) {
-        const frameKeys = key.split(",").map(Number);
-        hll += artifact.bySignature[canonicalKey(frameKeys, funcNames, libNames)] ?? 0;
-      }
-      sig.affectedClients = hll;
-    }
-    return { total: artifact.totalDistinct, synthetic: false };
+  if (!artifact) {
+    return null;
   }
-
-  let sumHll = 0;
-  let maxHll = 0;
+  // The aggregation job keys its counts by canonical key, so build those
+  // here. They stay inside the worker, which is the point: it is shipping
+  // them to the main thread that does not scale.
   for (const sig of signatures) {
-    const base = Math.max(1, Math.round(sig.count / 3));
-    const err = ((hashString(sig.stackKey) % 41) - 20) / 1000; // [-0.02, 0.02]
-    const hll = Math.max(1, Math.round(base * (1 + err)));
+    let hll = 0;
+    for (const key of sig.memberStackKeys ?? [sig.stackKey]) {
+      const frameKeys = key.split(",").map(Number);
+      hll += artifact.bySignature[canonicalKey(frameKeys, funcNames, libNames)] ?? 0;
+    }
     sig.affectedClients = hll;
-    sumHll += hll;
-    maxHll = Math.max(maxHll, hll);
   }
-  // Model client overlap across signatures, but keep the total >= any single
-  // signature so per-signature percentages stay <= 100%.
-  const total = Math.max(maxHll, Math.round(sumHll * 0.6));
-  return { total, synthetic: true };
+  return artifact.totalDistinct;
 }
 
 /** Accumulate duration and adopt a new representative stack if it's larger. */

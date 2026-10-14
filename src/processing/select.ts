@@ -5,6 +5,16 @@
  */
 
 import type { Frame, HangSignature, ProcessedProfile } from "./types";
+import {
+  hasContext,
+  inArea,
+  type AreaFilter,
+  type ContextId,
+  type MechanismId,
+} from "@/data/hangAreas";
+import { trendCategory, type TrendSummary } from "@/data/trend";
+import type { Platform } from "@/data/platforms";
+import type { BugFilter, TrendFilter } from "@/state/useViewState";
 
 /**
  * A test for whether a stack (funcTable indices) contains a frame whose
@@ -51,4 +61,49 @@ export function resolveFrames(
     funcName: profile.funcNames[fk],
     libName: profile.libNames[fk],
   }));
+}
+
+/** Everything the hang list can be narrowed by, short of a near-duplicate group. */
+export interface Narrowing {
+  filter: string;
+  platform: Platform | null;
+  area: AreaFilter | null;
+  mechanism: MechanismId | null;
+  context: ContextId | null;
+  trend: TrendFilter;
+  bug: BugFilter | null;
+}
+
+/**
+ * The signatures a narrowing keeps, in their original order. Shared by the
+ * list and the Areas page's investigation counts, so the two can't disagree.
+ */
+export function narrowSignatures(
+  profile: ProcessedProfile,
+  n: Narrowing,
+  trendById: Map<string, TrendSummary | null>,
+): HangSignature[] {
+  const { platform, area, mechanism, context, trend, bug } = n;
+  return filterSignatures(profile, n.filter).filter((s) => {
+    if (platform && !(s.platformStats[platform] > 0)) {
+      return false;
+    }
+    if (area && !inArea(s.kind, area)) {
+      return false;
+    }
+    if (mechanism && s.kind.mechanism !== mechanism) {
+      return false;
+    }
+    if (context && !hasContext(s.annotationStats, s.count, context)) {
+      return false;
+    }
+    if (bug && !!s.knownBug !== (bug === "tracked")) {
+      return false;
+    }
+    if (trend !== "all") {
+      const t = trendById.get(s.id);
+      return t != null && trendCategory(t) === trend;
+    }
+    return true;
+  });
 }

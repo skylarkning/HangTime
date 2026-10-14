@@ -13,6 +13,7 @@
  *    bug list's update time in the processing key drives that re-merge.
  */
 
+import { useMemo } from "react";
 import {
   useQuery,
   type UseQueryResult,
@@ -30,6 +31,8 @@ import { getProcessor } from "@/processing/client";
 import * as Comlink from "comlink";
 import type { Profile } from "@/data/schema";
 import type { ProcessedProfile } from "@/processing/types";
+import { computeTrend, type TrendSummary } from "@/data/trend";
+import type { Metric } from "@/data/timeseries";
 
 const EMPTY_BUGS: BugMap = new Map();
 const BUGS_STALE_MS = 60 * 60 * 1000; // bugs change slowly
@@ -124,9 +127,14 @@ export function useSourceResolver(): UseQueryResult<SourceResolver> {
 
 export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
   const bugs = useBugs();
+  // A build's artifact doesn't change, and downloading and processing it is
+  // the slowest thing the app does, so it's never stale. Otherwise every view
+  // or component that reads it (the build bar, the view a tab switch opens)
+  // would start the whole download over as it mounted.
   const raw = useQuery({
     queryKey: ["raw-profile", thread, date],
     queryFn: () => loadProfile(thread, date),
+    staleTime: Infinity,
   });
 
   // Re-process when the bug list first arrives (or refreshes after an error).
@@ -139,6 +147,7 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
     // avoids processing the whole profile twice -- once unmerged, then again
     // when the bugs land.
     enabled: !!raw.data && !bugs.isPending,
+    staleTime: Infinity,
     // Keep showing the current result while a refreshed bug list re-merges it,
     // but not across a change of build or thread: that would leave the old
     // build on screen, under the new build's name, with no sign it's loading.
@@ -165,4 +174,29 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
     } as typeof processed;
   }
   return processed;
+}
+
+/**
+ * Every signature's trend on the metric, keyed by signature id (null when it
+ * has no history). Compared as of the build on screen, so an older build's
+ * trends describe that build rather than the latest days of the window.
+ */
+export function useTrendById(
+  profile: ProcessedProfile | undefined,
+  index: TimeseriesIndex | undefined,
+  metric: Metric,
+): Map<string, TrendSummary | null> {
+  return useMemo(() => {
+    const map = new Map<string, TrendSummary | null>();
+    if (!profile) {
+      return map;
+    }
+    index?.bind(profile);
+    const endDate = profile.date;
+    for (const sig of profile.signatures) {
+      const series = index?.resolveSignature(sig);
+      map.set(sig.id, series ? computeTrend(series, metric, { endDate }) : null);
+    }
+    return map;
+  }, [profile, index, metric]);
 }

@@ -1,6 +1,7 @@
 /** Derived types produced by the processing layer (worker) from a Profile. */
 
 import type { FramePair, FuncIndex, SampleIndex } from "@/data/schema";
+import type { FrameTable, HangKind } from "@/data/hangAreas";
 
 /** A signature's membership in a near-duplicate leaf-frame group. */
 export interface LeafGroupInfo {
@@ -49,6 +50,8 @@ export interface ResolvedGroupMember {
 export interface ResolvedGroup {
   groupKey: string;
   displayName: string;
+  /** The meaningful frame every member shares, which the group is keyed by. */
+  leafFrame: FramePair;
   memberCount: number;
   totalMs: number;
   totalCount: number;
@@ -87,8 +90,9 @@ export interface KnownBug {
 /**
  * One merged hang signature, after stack-dedup and bug-merging.
  *
- * `id` is the stable identity used everywhere (list rows, detail view, and the
- * future timeseries join): the representative stack's func indices joined, or
+ * `id` is the identity used everywhere in the UI (list rows, detail view, and
+ * the `selected` link parameter): a hash of the representative stack's frames
+ * that is the same in every daily artifact (see `stableStackId`), or
  * `bug:<id>` for bug-merged signatures. See the signature-identity contract.
  */
 export interface HangSignature {
@@ -124,14 +128,23 @@ export interface HangSignature {
    * total and breaks out the top individual stacks.
    */
   memberStackKeys?: string[];
+  /** Each member stack's own hang ms and count, parallel to memberStackKeys. */
+  memberStackMs?: number[];
+  memberStackCounts?: number[];
   annotationStats: AnnotationStats;
   /** Per-signature OS histogram (platform string -> summed hang count). */
   platformStats: Record<string, number>;
   /** os -> summed hang ms, alongside platformStats' counts (platform filter). */
   platformMs: Record<string, number>;
-  /** Distinct affected clients on this day (HyperLogLog estimate). */
-  affectedClients: number;
+  /**
+   * Distinct hang-reporting clients that hit this signature on this build
+   * (HyperLogLog estimate). Absent when the build carries no client metrics.
+   * A row folding several stacks sums theirs, so it is an upper bound.
+   */
+  affectedClients?: number;
   knownBug?: KnownBug;
+  /** Area, mechanism and caller read from the representative stack. */
+  kind: HangKind;
 }
 
 /** Compact, serializable result of processing a Profile in the worker. */
@@ -149,10 +162,12 @@ export interface ProcessedProfile {
   signatures: HangSignature[];
   totalDuration: number;
   totalCount: number;
-  /** Day's distinct-client total (HLL); denominator for the % metric. */
-  affectedClientsTotal: number;
-  /** True when the count is dashboard-synthesized (no --client-metrics data). */
-  affectedClientsSynthetic: boolean;
+  /**
+   * Distinct clients that sent hang reports for this build (HLL), the
+   * denominator for the affected share. Null without client metrics. This is
+   * the hang-reporting population, not every Firefox or Nightly user.
+   */
+  affectedClientsTotal: number | null;
   /**
    * Leaf-frame group membership keyed by signature key, for signatures that are
    * members of a multi-member group. Absent when the artifact carried no
@@ -167,4 +182,9 @@ export interface ProcessedProfile {
   groupsByKey?: Record<string, ResolvedGroup>;
   /** Canonical stack key -> the displayed signature id that stack belongs to. */
   sigIdByKey?: Record<string, string>;
+  /**
+   * Each function's area and mechanism rule matches, so any stack (a group
+   * member, a diff side) can be classified on the main thread too.
+   */
+  frameTable: FrameTable;
 }

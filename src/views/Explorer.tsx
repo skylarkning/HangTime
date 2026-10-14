@@ -1,19 +1,35 @@
-import { useMemo } from "react";
-import { useBugs, useProcessedProfile, useTimeseries } from "@/queries/hooks";
+import { useEffect, useMemo } from "react";
+import { useBugs, useProcessedProfile, useTimeseries, useTrendById } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
-import { filterSignatures } from "@/processing/select";
-import { computeTrend, trendCategory, type TrendSummary } from "@/data/trend";
+import { isLegacyStackId } from "@/state/permalink";
+import { narrowSignatures, type Narrowing } from "@/processing/select";
 import type { Metric } from "@/data/timeseries";
 import { HangTable } from "@/components/HangTable";
 import { DetailPane } from "@/components/DetailPane";
 import { GroupMemberTable } from "@/components/GroupMemberTable";
-import { formatCount, formatSeconds } from "@/format";
+import { formatCount, formatPercentOfTotal, formatSeconds, formatShare } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
-import { memberStacks } from "@/processing/signatureKey";
 import { LoadingProgress } from "@/components/LoadingProgress";
 import { BuildBar } from "@/components/BuildBar";
 import { PLATFORMS, platformLabel, type Platform } from "@/data/platforms";
 import type { HangSignature } from "@/processing/types";
+import {
+  CONTEXTS,
+  MECHANISMS,
+  NO_AREA,
+  areaLabel,
+  type AreaFilter,
+  type ContextId,
+  type MechanismId,
+} from "@/data/hangAreas";
+import {
+  INVESTIGATIONS,
+  currentInvestigation,
+  investigationNarrowing,
+} from "@/data/investigations";
+import type { BugFilter, ViewState } from "@/state/useViewState";
+import { byArea, byMechanism } from "@/data/areaBreakdown";
+import { GroupRelationNote } from "@/components/GroupRelationNote";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -23,19 +39,7 @@ export function Explorer() {
 
   const metric: Metric = state.sort === "count" ? "count" : "ms";
 
-  const trendById = useMemo(() => {
-    const map = new Map<string, TrendSummary | null>();
-    if (!query.data) {
-      return map;
-    }
-    const index = timeseries.data;
-    index?.bind(query.data);
-    for (const sig of query.data.signatures) {
-      const series = index?.resolveByStack(memberStacks(sig));
-      map.set(sig.id, series ? computeTrend(series, metric) : null);
-    }
-    return map;
-  }, [query.data, timeseries.data, metric]);
+  const trendById = useTrendById(query.data, timeseries.data, metric);
 
   // The near-duplicate group the list is narrowed to, if any. The list then
   // shows the group's stacks one by one (GroupMemberTable) instead of rows.
@@ -73,30 +77,83 @@ export function Explorer() {
     return { duration, count };
   }, [platform, query.data]);
 
+  // The area and mechanism filters list what this build (on this platform)
+  // actually has, largest first, with each one's share of the hang time.
+  const measures = useMemo(() => ({ durationOf, countOf }), [durationOf, countOf]);
+  const areaRows = useMemo(
+    () => (query.data ? byArea(query.data.signatures, measures) : []),
+    [query.data, measures],
+  );
+  const mechanismRows = useMemo(
+    () => (query.data ? byMechanism(query.data.signatures, measures) : []),
+    [query.data, measures],
+  );
+
+  const narrowing: Narrowing = useMemo(
+    () => ({
+      filter: state.filter,
+      platform,
+      area: state.area,
+      mechanism: state.mechanism,
+      context: state.context,
+      trend: state.trend,
+      bug: state.bug,
+    }),
+    [state.filter, platform, state.area, state.mechanism, state.context, state.trend, state.bug],
+  );
+
   const filtered = useMemo(() => {
     if (!query.data) {
       return [];
     }
-    let sigs = filterSignatures(query.data, state.filter);
-    if (platform) {
-      sigs = sigs.filter((s) => countOf(s) > 0);
-    }
-    if (state.trend !== "all") {
-      sigs = sigs.filter((s) => {
-        const t = trendById.get(s.id);
-        return t != null && trendCategory(t) === state.trend;
-      });
+    const sigs = narrowSignatures(query.data, narrowing, trendById);
+    if (state.trend === "increase") {
+      // A big rise on a hang that barely registers matters less than a modest
+      // one on a heavy hang, so credible increases rank by what they added.
+      const added = (s: HangSignature) => trendById.get(s.id)?.deltaPerDay ?? 0;
+      return [...sigs].sort((a, b) => added(b) - added(a));
     }
     const value = metric === "count" ? countOf : durationOf;
     return [...sigs].sort((a, b) => value(b) - value(a));
-  }, [query.data, state.filter, state.trend, trendById, metric, platform, countOf, durationOf]);
+  }, [query.data, narrowing, trendById, state.trend, metric, countOf, durationOf]);
+
+  // Narrowed by anything but the platform, the summary counts what is shown.
+  const narrowed =
+    !!state.filter ||
+    !!state.area ||
+    !!state.mechanism ||
+    !!state.context ||
+    !!state.bug ||
+    state.trend !== "all";
+  const shownTotals = useMemo(() => {
+    let duration = 0;
+    let count = 0;
+    for (const sig of filtered) {
+      duration += durationOf(sig);
+      count += countOf(sig);
+    }
+    return { duration, count };
+  }, [filtered, durationOf, countOf]);
 
   const selected = useMemo(() => {
     if (!query.data || !state.selected) {
       return null;
     }
-    return query.data.signatures.find((s) => s.id === state.selected) ?? null;
+    // An older link names the hang by its stack's funcTable indices, which
+    // still find it on the build the link was made on.
+    const id = isLegacyStackId(state.selected)
+      ? (query.data.sigIdByKey?.[state.selected] ?? state.selected)
+      : state.selected;
+    return query.data.signatures.find((s) => s.id === id) ?? null;
   }, [query.data, state.selected]);
+
+  // Once an older link has found its hang, put the stable id in the address,
+  // so copying it from there gives a link that works on any build.
+  useEffect(() => {
+    if (selected && state.selected !== selected.id) {
+      update({ selected: selected.id });
+    }
+  }, [selected, state.selected, update]);
 
   if (query.isError) {
     return (
@@ -141,6 +198,7 @@ export function Explorer() {
                 <span className="group-badge">
                   {group.memberCount.toLocaleString()} stacks
                 </span>
+                <GroupRelationNote profile={profile} group={group} />
               </>
             ) : (
               <span>That near-duplicate group isn’t in this build.</span>
@@ -151,6 +209,14 @@ export function Explorer() {
           </div>
         )}
         <div className="filter-bar">
+          <AreaFilters
+            narrowing={narrowing}
+            areaRows={areaRows}
+            mechanismRows={mechanismRows}
+            hasHistory={!!timeseries.data}
+            disabled={!!group}
+            onChange={update}
+          />
           <input
             type="text"
             placeholder="Filter by function or library name…"
@@ -201,7 +267,7 @@ export function Explorer() {
                   ? "Trend filtering needs the timeseries artifact"
                   : platform
                     ? "Trends are worked out across all platforms"
-                    : undefined
+                    : "Increases and decreases count only when both weeks have enough data behind them"
             }
           >
             Trend
@@ -213,9 +279,9 @@ export function Explorer() {
               }
             >
               <option value="all">All</option>
-              <option value="regression">Regressions</option>
-              <option value="improvement">Improvements</option>
-              <option value="new">New</option>
+              <option value="increase">Increases</option>
+              <option value="decrease">Decreases</option>
+              <option value="new">Newly tracked</option>
             </select>
           </label>
           {group ? (
@@ -227,9 +293,34 @@ export function Explorer() {
           ) : (
             <span className="summary">
               <strong>{filtered.length.toLocaleString()}</strong> signatures ·{" "}
-              <strong>{formatSeconds(platformTotals?.duration ?? profile.totalDuration)}</strong>{" "}
-              s · <strong>{formatCount(platformTotals?.count ?? profile.totalCount)}</strong> hangs
+              <strong>
+                {formatSeconds(
+                  narrowed
+                    ? shownTotals.duration
+                    : (platformTotals?.duration ?? profile.totalDuration),
+                )}
+              </strong>{" "}
+              s ·{" "}
+              <strong>
+                {formatCount(
+                  narrowed ? shownTotals.count : (platformTotals?.count ?? profile.totalCount),
+                )}
+              </strong>{" "}
+              hangs
               {platform && <> on {platformLabel(platform)}</>}
+              {narrowed && (
+                <>
+                  {" "}
+                  ({formatPercentOfTotal(
+                    shownTotals.duration,
+                    platformTotals?.duration ?? profile.totalDuration,
+                  )}{" "}
+                  of hang time)
+                </>
+              )}
+              {state.trend === "increase" && (
+                <> · ranked by added {metric === "count" ? "hangs" : "time"} per day</>
+              )}
             </span>
           )}
         </div>
@@ -254,6 +345,7 @@ export function Explorer() {
               durationOf={durationOf}
               countOf={countOf}
               totalDuration={platformTotals?.duration}
+              trendAllPlatforms={!!platform}
             />
           )}
         </div>
@@ -261,12 +353,182 @@ export function Explorer() {
       <DetailPane
         profile={profile}
         signature={selected}
+        requestedId={state.selected}
         filter={state.filter}
         timeseries={timeseries.data}
         onSelect={(id) => update({ selected: id })}
         activeGroup={state.group}
         onShowGroup={(key) => update({ group: key })}
+        onFilter={(text) =>
+          // Everything the text matches, so the list agrees with what a bug tag
+          // would fold in: drop the other narrowing.
+          update({
+            filter: text,
+            area: null,
+            mechanism: null,
+            context: null,
+            platform: null,
+            group: null,
+            trend: "all",
+            bug: null,
+          })
+        }
       />
+    </div>
+  );
+}
+
+/**
+ * The area, mechanism and context filters: the three ways a hang is described
+ * (see data/hangAreas.ts), so "main-thread file I/O" or "everything in fonts"
+ * is one choice away.
+ */
+function AreaFilters({
+  narrowing,
+  areaRows,
+  mechanismRows,
+  hasHistory,
+  disabled,
+  onChange,
+}: {
+  narrowing: Narrowing;
+  areaRows: { key: AreaFilter; label: string; ms: number }[];
+  mechanismRows: { key: MechanismId; label: string; ms: number }[];
+  hasHistory: boolean;
+  disabled: boolean;
+  onChange: (patch: Partial<ViewState>) => void;
+}) {
+  const { area, mechanism, context, bug } = narrowing;
+  const investigation = currentInvestigation(narrowing);
+  const custom =
+    !investigation &&
+    (!!narrowing.filter ||
+      !!area ||
+      !!mechanism ||
+      !!context ||
+      !!bug ||
+      narrowing.trend !== "all");
+  const total = areaRows.reduce((sum, row) => sum + row.ms, 0);
+  const share = (ms: number) => formatShare(ms, total);
+  // Keep the current choice listed even when nothing in view matches it.
+  const withCurrent = <K extends string>(
+    rows: { key: K; label: string; ms: number }[],
+    current: K | null,
+    label: (key: K) => string,
+  ) =>
+    current && !rows.some((row) => row.key === current)
+      ? [...rows, { key: current, label: label(current), ms: 0 }]
+      : rows;
+  const title = disabled
+    ? "A group's stacks are listed one by one, so this doesn't apply to them"
+    : undefined;
+  const areaName = (key: AreaFilter) => areaLabel(key === NO_AREA ? null : key);
+
+  return (
+    <div className="area-filters">
+      <label
+        className="control investigation-control"
+        title={title ?? investigation?.blurb ?? "Start from a common triage question"}
+      >
+        Investigation
+        <select
+          value={investigation?.id ?? (custom ? "custom" : "all")}
+          disabled={disabled}
+          onChange={(e) => {
+            const picked = INVESTIGATIONS.find((inv) => inv.id === e.target.value);
+            onChange({
+              ...investigationNarrowing(picked ?? null),
+              filter: "",
+              ...(picked?.sort ? { sort: picked.sort } : {}),
+            });
+          }}
+        >
+          <option value="all">All hangs</option>
+          {INVESTIGATIONS.map((inv) => (
+            <option key={inv.id} value={inv.id} disabled={inv.needsHistory && !hasHistory}>
+              {inv.label}
+            </option>
+          ))}
+          {custom && (
+            <option value="custom" disabled>
+              Custom filters
+            </option>
+          )}
+        </select>
+      </label>
+      <label className="control" title={title ?? "Show only hangs in one area of the browser"}>
+        Area
+        <select
+          value={area ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ area: e.target.value === "all" ? null : (e.target.value as AreaFilter) })
+          }
+        >
+          <option value="all">All</option>
+          {withCurrent(areaRows, area, areaName).map((row) => (
+            <option key={row.key} value={row.key}>
+              {row.label} ({share(row.ms)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label
+        className="control"
+        title={title ?? "Show only hangs stuck in one way: file I/O, a lock wait, sync IPC..."}
+      >
+        Mechanism
+        <select
+          value={mechanism ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({
+              mechanism: e.target.value === "all" ? null : (e.target.value as MechanismId),
+            })
+          }
+        >
+          <option value="all">All</option>
+          {withCurrent(mechanismRows, mechanism, (key) => MECHANISMS[key].label).map((row) => (
+            <option key={row.key} value={row.key}>
+              {row.label} ({share(row.ms)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label
+        className="control"
+        title={title ?? "Show only hangs where most reports carry this flag"}
+      >
+        When
+        <select
+          value={context ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ context: e.target.value === "all" ? null : (e.target.value as ContextId) })
+          }
+        >
+          <option value="all">Any time</option>
+          {(Object.keys(CONTEXTS) as ContextId[]).map((key) => (
+            <option key={key} value={key}>
+              {CONTEXTS[key].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="control" title={title ?? "Show only hangs with, or without, a bug"}>
+        Bug
+        <select
+          value={bug ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ bug: e.target.value === "all" ? null : (e.target.value as BugFilter) })
+          }
+        >
+          <option value="all">Any</option>
+          <option value="untracked">No bug yet</option>
+          <option value="tracked">Has a bug</option>
+        </select>
+      </label>
     </div>
   );
 }
