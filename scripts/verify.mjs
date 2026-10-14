@@ -58,18 +58,18 @@ try {
   }
   const pagingOk = String(paging) === "50,100,150";
 
-  // The overview's two-column grid has to fit the viewport at any width.
+  // The Areas page's two-column grid has to fit the viewport at any width.
   const overflow = [];
   for (const width of [1100, 1280, 1440]) {
     await page.setViewport({ width, height: 900 });
-    await page.goto(`${URL.split("#")[0]}#/`, { waitUntil: "networkidle2" });
-    await page.waitForSelector(".ov-chart canvas", { timeout: 30000 });
+    await page.goto(`${URL.split("#")[0]}#/areas`, { waitUntil: "networkidle2" });
+    await page.waitForSelector(".breakdown-row", { timeout: 30000 });
     await new Promise((r) => setTimeout(r, 400));
     const fits = await page.evaluate(() => {
-      const ov = document.querySelector(".overview");
-      const cards = [...document.querySelectorAll(".ov-grid > *")];
+      const view = document.querySelector(".areas-page");
+      const cards = [...document.querySelectorAll(".areas-grid > *")];
       return (
-        ov.scrollWidth <= ov.clientWidth &&
+        view.scrollWidth <= view.clientWidth &&
         cards.every((c) => c.getBoundingClientRect().right <= window.innerWidth)
       );
     });
@@ -79,7 +79,7 @@ try {
 
   console.log("RESULT:", result);
   console.log("PAGING:", paging.join(" -> "), pagingOk ? "(ok)" : "(FAILED)");
-  console.log("OVERVIEW_FITS:", overflow.join(" "), layoutOk ? "(ok)" : "(FAILED)");
+  console.log("AREAS_FITS:", overflow.join(" "), layoutOk ? "(ok)" : "(FAILED)");
   console.log("SUMMARY:", summary.summary);
   console.log("STATE_MSG:", summary.stateMsg);
   console.log("FIRST_ROWS:", JSON.stringify(summary.rows, null, 2));

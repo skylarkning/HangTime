@@ -1,6 +1,7 @@
 /** Derived types produced by the processing layer (worker) from a Profile. */
 
 import type { FramePair, FuncIndex, SampleIndex } from "@/data/schema";
+import type { FrameTable, HangKind } from "@/data/hangAreas";
 
 /** A signature's membership in a near-duplicate leaf-frame group. */
 export interface LeafGroupInfo {
@@ -132,6 +133,8 @@ export interface HangSignature {
   /** Distinct affected clients on this day (HyperLogLog estimate). */
   affectedClients: number;
   knownBug?: KnownBug;
+  /** Area, mechanism and caller read from the representative stack. */
+  kind: HangKind;
 }
 
 /** Compact, serializable result of processing a Profile in the worker. */
@@ -167,4 +170,9 @@ export interface ProcessedProfile {
   groupsByKey?: Record<string, ResolvedGroup>;
   /** Canonical stack key -> the displayed signature id that stack belongs to. */
   sigIdByKey?: Record<string, string>;
+  /**
+   * Each function's area and mechanism rule matches, so any stack (a group
+   * member, a diff side) can be classified on the main thread too.
+   */
+  frameTable: FrameTable;
 }

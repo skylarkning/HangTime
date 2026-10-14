@@ -4,7 +4,7 @@ import { Header } from "@/components/Header";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Explorer } from "@/views/Explorer";
 import { Guide } from "@/views/Guide";
-import { Overview } from "@/views/Overview";
+import { Areas } from "@/views/Areas";
 import { useViewState } from "@/state/useViewState";
 import { useProcessedProfile } from "@/queries/hooks";
 import type { ThreadKind } from "@/data/dataSource";
@@ -28,7 +28,8 @@ export function App() {
       <Routes>
         <Route path="/" element={<ToTopHangs />} />
         <Route path="/top-hangs" element={<Explorer />} />
-        <Route path="/overview" element={<Overview />} />
+        <Route path="/areas" element={<Areas />} />
+        <Route path="/overview" element={<ToAreas />} />
         <Route path="/guide" element={<Guide />} />
         <Route path="*" element={<ToTopHangs />} />
       </Routes>
@@ -44,4 +45,10 @@ export function App() {
 function ToTopHangs() {
   const { search } = useLocation();
   return <Navigate to={{ pathname: "/top-hangs", search }} replace />;
+}
+
+/** The Areas page took the Overview's place; an old Overview link opens it. */
+function ToAreas() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: "/areas", search }} replace />;
 }

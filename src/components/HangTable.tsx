@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { HangSignature, ProcessedProfile } from "@/processing/types";
-import { resolveFrames } from "@/processing/select";
 import { trendBadge, type TrendSummary } from "@/data/trend";
 import { formatCount, formatPercentOfTotal, formatSeconds } from "@/format";
-import { frameLabel } from "@/frames";
-import { Highlight } from "./Highlight";
+import { HangName } from "./HangName";
 import { InfoTip } from "./InfoTip";
 
 /** Rows rendered up front, and how many each "show more" click adds. */
@@ -95,7 +93,19 @@ export function HangTable({
               </span>
             </InfoTip>
           </th>
-          <th>Hang signature (leaf frame)</th>
+          <th>
+            Hang
+            <InfoTip label="Hang">
+              What the hang is, read from its stack: the area of the browser it
+              is in and how the thread was stuck, then (in grey) the frame the
+              stack stopped on and the Firefox code that called it.
+              <span className="eg">
+                e.g. <b>Startup cache: lock wait</b> during JS module loading, over{" "}
+                <code>WaitOnAddress ← StartupCache::GetBuffer</code>. It describes
+                where the thread was, not a confirmed cause.
+              </span>
+            </InfoTip>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -107,7 +117,6 @@ export function HangTable({
           </tr>
         )}
         {visible.map((sig, i) => {
-          const leaf = resolveFrames(profile, sig.frameKeys.slice(0, 1))[0];
           const trend = trendById.get(sig.id) ?? null;
           const badge = trend ? trendBadge(trend) : null;
           return (
@@ -130,11 +139,7 @@ export function HangTable({
                 )}
               </td>
               <td className="sig">
-                {sig.knownBug ? (
-                  <BugCell bug={sig.knownBug} />
-                ) : (
-                  <Highlight text={frameLabel(leaf)} needle={filter} />
-                )}
+                <HangName profile={profile} sig={sig} filter={filter} />
               </td>
             </tr>
           );
@@ -156,22 +161,5 @@ export function HangTable({
         )}
       </tbody>
     </table>
-  );
-}
-
-function BugCell({ bug }: { bug: { id: number; summary: string; status: string } }) {
-  return (
-    <>
-      <a
-        href={`https://bugzilla.mozilla.org/show_bug.cgi?id=${bug.id}`}
-        title={`${bug.status} — ${bug.summary}`}
-        target="_blank"
-        rel="noreferrer"
-        onClick={(e) => e.stopPropagation()}
-      >
-        Bug {bug.id}
-      </a>{" "}
-      — {bug.summary}
-    </>
   );
 }
