@@ -160,11 +160,13 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
   gap: 9px; flex: 1; min-height: 0;
 }
 .list-pane { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border-radius: 20px; box-shadow: var(--card-shadow); overflow: hidden; }
-.pane-heading { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px 10px; gap: 16px; }
+.pane-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 16px 24px 10px; gap: 10px 16px; }
+.pane-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .pane-heading h1 { font-size: 27px; font-weight: 650; line-height: 1.3; letter-spacing: -0.9px; margin-top: 3px; }
 .filter-toggle { display: inline-flex; gap: 13px; align-items: center; color: var(--text); background: var(--surface-alt); border: none; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .filter-toggle.active { background: var(--blue-light); color: var(--blue); }
 .filter-bar:not(.filters-expanded) .advanced-control { display: none; }
+.filter-bar:not(.filters-expanded) .area-filters { display: none; }
 .clear-filters { margin-left: auto; font-size: 12px; }
 .active-filters { display: flex; flex-wrap: wrap; flex-basis: 100%; gap: 6px; }
 .active-filters button { display: inline-flex; align-items: center; gap: 10px; padding: 4px 9px; border: none; border-radius: 6px; font-size: 11px; color: var(--blue); background: var(--blue-light); cursor: pointer; }
@@ -181,11 +183,11 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
   border-radius: 8px; font: inherit; color: var(--text); background: var(--surface-alt);
 }
 .filter-bar input[type="text"]:focus { outline: none; border-color: var(--blue); }
-.filter-bar .control {
+.filter-bar .control, .pane-actions .control {
   display: flex; align-items: center; gap: 7px; flex: none;
   color: var(--muted); font-size: 12px; white-space: nowrap;
 }
-.filter-bar .control select {
+.filter-bar .control select, .pane-actions .control select {
   font: inherit; font-size: 12px; padding: 7px 9px; color: var(--text);
   background: var(--surface-alt); border: 1px solid transparent; border-radius: 8px;
 }
@@ -194,7 +196,8 @@ nav.tabs button:not(:disabled):hover, nav.tabs a:hover { color: var(--text); }
 /* Area, mechanism and context sit on a row of their own above the rest. */
 .area-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; flex: 1 0 100%; }
 .area-filters select { max-width: 210px; }
-.investigation-control { width: 100%; }
+.primary-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: 100%; }
+.filter-bar .investigation-control { flex: 0 1 260px; min-width: 230px; }
 .investigation-control select { flex: 1; max-width: none; min-width: 0; }
 .filter-bar .summary strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
@@ -1005,6 +1008,7 @@ table.hangs .num.share { width: 4em; color: var(--muted); }
   .pane-heading h1 { font-size: 25px; }
   .filter-bar { padding: 0 16px 14px; gap: 10px; }
   .filter-bar .control { font-size: 11px; }
+  .filter-bar .investigation-control { flex: 1 1 230px; }
   .area-filters { gap: 10px; }
   .filter-bar .advanced-control { flex: 1 1 130px; min-width: 0; }
   .filter-bar .advanced-control select { min-width: 0; max-width: 100%; flex: 1; }

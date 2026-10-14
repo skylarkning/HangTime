@@ -191,11 +191,23 @@ export function Explorer() {
         <div className="list-pane">
           <div className="pane-heading">
             <div><span className="eyebrow">Investigation workspace</span><h1>Top Hangs</h1></div>
-            <button className={`filter-toggle${showFilters ? " active" : ""}`}
-              aria-expanded={showFilters} aria-controls="hang-filters"
-              onClick={() => setShowFilters((value) => !value)}>
-              Filters{narrowed ? " · active" : ""} <span aria-hidden="true">{showFilters ? "−" : "+"}</span>
-            </button>
+            <div className="pane-actions">
+              <label className="control">
+                Sort by
+                <select
+                  value={state.sort}
+                  onChange={(e) => update({ sort: e.target.value as typeof state.sort })}
+                >
+                  <option value="time">Time</option>
+                  <option value="count">Count</option>
+                </select>
+              </label>
+              <button className={`filter-toggle${showFilters ? " active" : ""}`}
+                aria-expanded={showFilters} aria-controls="hang-filters"
+                onClick={() => setShowFilters((value) => !value)}>
+                Filters{narrowed ? " · active" : ""} <span aria-hidden="true">{showFilters ? "−" : "+"}</span>
+              </button>
+            </div>
           </div>
           {bugs.isError && (
             <div className="banner warn">
@@ -234,6 +246,15 @@ export function Explorer() {
               hasHistory={!!timeseries.data}
               disabled={!!group}
               onChange={update}
+              search={
+                <input
+                  type="text"
+                  placeholder="Search functions or libraries…"
+                  aria-label="Search functions or libraries"
+                  value={state.filter}
+                  onChange={(e) => update({ filter: e.target.value })}
+                />
+              }
             />
             {!showFilters && !group && activeFacets.length > 0 && (
               <div className="active-filters" aria-label="Active filters">
@@ -245,23 +266,6 @@ export function Explorer() {
                 ))}
               </div>
             )}
-            <input
-              type="text"
-              placeholder="Search functions or libraries…"
-              aria-label="Search functions or libraries"
-              value={state.filter}
-              onChange={(e) => update({ filter: e.target.value })}
-            />
-            <label className="control">
-              Sort
-              <select
-                value={state.sort}
-                onChange={(e) => update({ sort: e.target.value as typeof state.sort })}
-              >
-                <option value="time">Time</option>
-                <option value="count">Count</option>
-              </select>
-            </label>
             <label
               className="control advanced-control"
               title={
@@ -420,6 +424,7 @@ export function Explorer() {
  * is one choice away.
  */
 function AreaFilters({
+  search,
   narrowing,
   areaRows,
   mechanismRows,
@@ -427,6 +432,7 @@ function AreaFilters({
   disabled,
   onChange,
 }: {
+  search: React.ReactNode;
   narrowing: Narrowing;
   areaRows: { key: AreaFilter; label: string; ms: number }[];
   mechanismRows: { key: MechanismId; label: string; ms: number }[];
@@ -461,110 +467,115 @@ function AreaFilters({
   const areaName = (key: AreaFilter) => areaLabel(key === NO_AREA ? null : key);
 
   return (
-    <div className="area-filters">
-      <label
-        className="control investigation-control"
-        title={title ?? investigation?.blurb ?? "Start from a common triage question"}
-      >
-        Investigation
-        <select
-          value={investigation?.id ?? (custom ? "custom" : "all")}
-          disabled={disabled}
-          onChange={(e) => {
-            const picked = INVESTIGATIONS.find((inv) => inv.id === e.target.value);
-            onChange({
-              ...investigationNarrowing(picked ?? null),
-              filter: "",
-              ...(picked?.sort ? { sort: picked.sort } : {}),
-            });
-          }}
+    <>
+      <div className="primary-filters">
+        <label
+          className="control investigation-control"
+          title={title ?? investigation?.blurb ?? "Start from a common triage question"}
         >
-          <option value="all">All hangs</option>
-          {INVESTIGATIONS.map((inv) => (
-            <option key={inv.id} value={inv.id} disabled={inv.needsHistory && !hasHistory}>
-              {inv.label}
-            </option>
-          ))}
-          {custom && (
-            <option value="custom" disabled>
-              Custom filters
-            </option>
-          )}
-        </select>
-      </label>
-      <label className="control advanced-control" title={title ?? "Show only hangs in one area of the browser"}>
-        Area
-        <select
-          value={area ?? "all"}
-          disabled={disabled}
-          onChange={(e) =>
-            onChange({ area: e.target.value === "all" ? null : (e.target.value as AreaFilter) })
-          }
+          Investigation
+          <select
+            value={investigation?.id ?? (custom ? "custom" : "all")}
+            disabled={disabled}
+            onChange={(e) => {
+              const picked = INVESTIGATIONS.find((inv) => inv.id === e.target.value);
+              onChange({
+                ...investigationNarrowing(picked ?? null),
+                filter: "",
+                ...(picked?.sort ? { sort: picked.sort } : {}),
+              });
+            }}
+          >
+            <option value="all">All hangs</option>
+            {INVESTIGATIONS.map((inv) => (
+              <option key={inv.id} value={inv.id} disabled={inv.needsHistory && !hasHistory}>
+                {inv.label}
+              </option>
+            ))}
+            {custom && (
+              <option value="custom" disabled>
+                Custom filters
+              </option>
+            )}
+          </select>
+        </label>
+        {search}
+      </div>
+      <div className="area-filters">
+        <label className="control advanced-control" title={title ?? "Show only hangs in one area of the browser"}>
+          Area
+          <select
+            value={area ?? "all"}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({ area: e.target.value === "all" ? null : (e.target.value as AreaFilter) })
+            }
+          >
+            <option value="all">All</option>
+            {withCurrent(areaRows, area, areaName).map((row) => (
+              <option key={row.key} value={row.key}>
+                {row.label} ({share(row.ms)})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label
+          className="control advanced-control"
+          title={title ?? "Show only hangs stuck in one way: file I/O, a lock wait, sync IPC..."}
         >
-          <option value="all">All</option>
-          {withCurrent(areaRows, area, areaName).map((row) => (
-            <option key={row.key} value={row.key}>
-              {row.label} ({share(row.ms)})
-            </option>
-          ))}
-        </select>
-      </label>
-      <label
-        className="control advanced-control"
-        title={title ?? "Show only hangs stuck in one way: file I/O, a lock wait, sync IPC..."}
-      >
-        Mechanism
-        <select
-          value={mechanism ?? "all"}
-          disabled={disabled}
-          onChange={(e) =>
-            onChange({
-              mechanism: e.target.value === "all" ? null : (e.target.value as MechanismId),
-            })
-          }
+          Mechanism
+          <select
+            value={mechanism ?? "all"}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({
+                mechanism: e.target.value === "all" ? null : (e.target.value as MechanismId),
+              })
+            }
+          >
+            <option value="all">All</option>
+            {withCurrent(mechanismRows, mechanism, (key) => MECHANISMS[key].label).map((row) => (
+              <option key={row.key} value={row.key}>
+                {row.label} ({share(row.ms)})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label
+          className="control advanced-control"
+          title={title ?? "Show only hangs where most reports carry this flag"}
         >
-          <option value="all">All</option>
-          {withCurrent(mechanismRows, mechanism, (key) => MECHANISMS[key].label).map((row) => (
-            <option key={row.key} value={row.key}>
-              {row.label} ({share(row.ms)})
-            </option>
-          ))}
-        </select>
-      </label>
-      <label
-        className="control advanced-control"
-        title={title ?? "Show only hangs where most reports carry this flag"}
-      >
-        When
-        <select
-          value={context ?? "all"}
-          disabled={disabled}
-          onChange={(e) =>
-            onChange({ context: e.target.value === "all" ? null : (e.target.value as ContextId) })
-          }
-        >
-          <option value="all">Any time</option>
-          {(Object.keys(CONTEXTS) as ContextId[]).map((key) => (
-            <option key={key} value={key}>
-              {CONTEXTS[key].label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="control advanced-control" title={title ?? "Show only hangs with, or without, a bug"}>
-        Bug
-        <select
-          value={bug ?? "all"}
-          disabled={disabled}
-          onChange={(e) =>
-            onChange({ bug: e.target.value === "all" ? null : (e.target.value as BugFilter) })
-          }
-        >
-          <option value="all">Any</option>
-          <option value="untracked">No bug yet</option>
-          <option value="tracked">Has a bug</option>
-        </select>
-      </label>
-    </div>
+          When
+          <select
+            value={context ?? "all"}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({ context: e.target.value === "all" ? null : (e.target.value as ContextId) })
+            }
+          >
+            <option value="all">Any time</option>
+            {(Object.keys(CONTEXTS) as ContextId[]).map((key) => (
+              <option key={key} value={key}>
+                {CONTEXTS[key].label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="control advanced-control" title={title ?? "Show only hangs with, or without, a bug"}>
+          Bug
+          <select
+            value={bug ?? "all"}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({ bug: e.target.value === "all" ? null : (e.target.value as BugFilter) })
+            }
+          >
+            <option value="all">Any</option>
+            <option value="untracked">No bug yet</option>
+            <option value="tracked">Has a bug</option>
+          </select>
+        </label>
+      </div>
+    </>
   );
 }
