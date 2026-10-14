@@ -258,7 +258,6 @@ export function buildSignatures(
       annotationStats,
       platformStats: platform ? { [platform]: count } : {},
       platformMs: platform ? { [platform]: duration } : {},
-      affectedClients: 0,
       knownBug: bug,
     };
     signatures.push(sig);
@@ -277,7 +276,12 @@ export function buildSignatures(
     totalCount += sig.count;
   }
 
-  const affected = attachAffectedClients(profile, signatures, funcNames, libNames);
+  const affectedClientsTotal = attachAffectedClients(
+    profile,
+    signatures,
+    funcNames,
+    libNames,
+  );
 
   // Stack key -> the displayed signature it belongs to, so clicking a group
   // member (which may be a stack folded into a bug row) can select it.
@@ -298,8 +302,7 @@ export function buildSignatures(
     signatures,
     totalDuration,
     totalCount,
-    affectedClientsTotal: affected.total,
-    affectedClientsSynthetic: affected.synthetic,
+    affectedClientsTotal,
     leafGroupByKey: buildLeafGroupLookup(profile, thread, funcNames, libNames),
     groupsByKey: buildResolvedGroups(profile, thread, funcNames, libNames),
     sigIdByKey,
@@ -394,61 +397,39 @@ function buildLeafGroupLookup(
   return byKey;
 }
 
-/** Deterministic 32-bit FNV-1a hash, for reproducible synthetic perturbation. */
-function hashString(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
 /**
- * Attach the per-signature distinct affected-client count (HyperLogLog) and the
- * daily total.
+ * Attach the per-signature distinct affected-client count (HyperLogLog) from a
+ * `--client-metrics` artifact, returning the build's distinct-client total.
  *
- * With a real `--client-metrics` artifact, sum each signature's member stacks
- * (a bug-merged row is an upper bound, since per-signature sketches aren't
- * unioned here - a follow-up). Without one, synthesize a dev-only number:
- * ~count/3 nudged by a deterministic +/- ~2% to mimic HLL approximation error.
+ * A row folding several stacks (a bug) sums its members' counts. Their client
+ * sets overlap and the published counts can't be unioned, so that sum is an
+ * upper bound rather than a distinct count.
+ *
+ * Without the artifact nothing is attached and the total is null: there is no
+ * number to show, and the detail pane says so rather than inventing one.
  */
 function attachAffectedClients(
   profile: Profile,
   signatures: HangSignature[],
   funcNames: string[],
   libNames: string[],
-): { total: number; synthetic: boolean } {
+): number | null {
   const artifact = profile.affectedClients;
-  if (artifact) {
-    // The aggregation job keys its counts by canonical key, so build those
-    // here. They stay inside the worker, which is the point: it is shipping
-    // them to the main thread that does not scale.
-    for (const sig of signatures) {
-      let hll = 0;
-      for (const key of sig.memberStackKeys ?? [sig.stackKey]) {
-        const frameKeys = key.split(",").map(Number);
-        hll += artifact.bySignature[canonicalKey(frameKeys, funcNames, libNames)] ?? 0;
-      }
-      sig.affectedClients = hll;
-    }
-    return { total: artifact.totalDistinct, synthetic: false };
+  if (!artifact) {
+    return null;
   }
-
-  let sumHll = 0;
-  let maxHll = 0;
+  // The aggregation job keys its counts by canonical key, so build those
+  // here. They stay inside the worker, which is the point: it is shipping
+  // them to the main thread that does not scale.
   for (const sig of signatures) {
-    const base = Math.max(1, Math.round(sig.count / 3));
-    const err = ((hashString(sig.stackKey) % 41) - 20) / 1000; // [-0.02, 0.02]
-    const hll = Math.max(1, Math.round(base * (1 + err)));
+    let hll = 0;
+    for (const key of sig.memberStackKeys ?? [sig.stackKey]) {
+      const frameKeys = key.split(",").map(Number);
+      hll += artifact.bySignature[canonicalKey(frameKeys, funcNames, libNames)] ?? 0;
+    }
     sig.affectedClients = hll;
-    sumHll += hll;
-    maxHll = Math.max(maxHll, hll);
   }
-  // Model client overlap across signatures, but keep the total >= any single
-  // signature so per-signature percentages stay <= 100%.
-  const total = Math.max(maxHll, Math.round(sumHll * 0.6));
-  return { total, synthetic: true };
+  return artifact.totalDistinct;
 }
 
 /** Accumulate duration and adopt a new representative stack if it's larger. */

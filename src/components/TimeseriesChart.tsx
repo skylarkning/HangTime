@@ -395,23 +395,25 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
             const total = dayTotals[items[0]?.dataIndex ?? -1];
             return total == null ? "" : `Total: ${total.toLocaleString()} ${unit}`;
           },
-          // Append that single day's distinct affected users (and share of the
-          // day's users) when the artifact carried client metrics.
+          // Append that single day's distinct affected clients (and their share
+          // of the day's hang-reporting clients) when the artifact carried
+          // client metrics.
           afterBody: (items) => {
             if (!affected) {
               return "";
             }
             const i = items[0]?.dataIndex ?? 0;
-            const users = affected[i];
-            if (users == null) {
-              return "Affected users: no data for this day";
+            const clients = affected[i];
+            if (clients == null) {
+              return "Clients affected: no data for this day";
             }
             const dayTotal = totalAffected?.[i];
             const share =
               dayTotal != null && dayTotal > 0
-                ? ` (${((users / dayTotal) * 100).toFixed(2)}% of users)`
+                ? ` (${((clients / dayTotal) * 100).toFixed(2)}% of hang-reporting clients)`
                 : "";
-            return `Affected users: ${users.toLocaleString()}${share}`;
+            const bound = showMembers ? "up to " : "";
+            return `Clients affected: ${bound}${clients.toLocaleString()}${share}`;
           },
         },
       },
@@ -466,8 +468,14 @@ export function TimeseriesChart({ index, signature }: TimeseriesChartProps) {
               lines, so a spike or a new hang can be lined up against a release:{" "}
               <em style={{ color: "#d76e00" }}>orange = Release</em>,{" "}
               <em style={{ color: "#0250bb" }}>blue = Beta</em>,{" "}
-              <em style={{ color: "#058b00" }}>green = Nightly</em>. Hover a day
-              to also see the distinct users affected that day.
+              <em style={{ color: "#058b00" }}>green = Nightly</em>.
+              {affected && (
+                <>
+                  {" "}
+                  Hover a day to also see the distinct clients affected that day,
+                  out of the clients that sent hang reports.
+                </>
+              )}
             </span>
           </InfoTip>
         </h3>

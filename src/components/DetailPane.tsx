@@ -841,10 +841,10 @@ function PlatformSection({
   );
 }
 
-type AffectedWindowKey = "today" | "d7" | "d28" | "d365";
+type AffectedWindowKey = "build" | "d7" | "d28" | "d365";
 
 const AFFECTED_OPTIONS: { key: AffectedWindowKey; label: string }[] = [
-  { key: "today", label: "Today" },
+  { key: "build", label: "This build" },
   { key: "d7", label: "7-Day" },
   { key: "d28", label: "28-Day" },
   { key: "d365", label: "365-Day" },
@@ -859,55 +859,73 @@ function AffectedClientsSection({
   signature: HangSignature;
   timeseries: TimeseriesIndex | undefined;
 }) {
-  const [window, setWindow] = useState<AffectedWindowKey>("today");
+  const [picked, setPicked] = useState<AffectedWindowKey>("build");
   const resolved = timeseries?.resolveAffectedByStack(memberStacks(signature)) ?? null;
-  const hasCrossDay = !!resolved;
 
-  // A stale window selection (e.g. cross-day unavailable) falls back to Today.
-  const active: AffectedWindowKey = window !== "today" && !hasCrossDay ? "today" : window;
+  // Only measured counts are shown: the build's come from a --client-metrics
+  // run, the windows from a timeseries rolled up from such runs. Anything
+  // missing is said to be missing, never estimated.
+  const buildUsers = signature.affectedClients;
+  const buildTotal = profile.affectedClientsTotal;
+  const hasBuild = buildUsers != null && buildTotal != null;
+  const available = (key: AffectedWindowKey) => (key === "build" ? hasBuild : !!resolved);
+  const options = AFFECTED_OPTIONS.filter((o) => available(o.key));
+  // A stale choice (a window this hang has no cross-day data for, say) falls
+  // back to the first one that has data.
+  const active = available(picked) ? picked : options[0]?.key;
+
+  if (!active) {
+    return (
+      <div className="detail-section">
+        <h3>Clients affected</h3>
+        <p className="muted">Affected-client data unavailable for this build.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="detail-section">
       <div className="ts-header">
         <h3>
-          Affected clients
-          <InfoTip label="Affected clients">
-            Distinct users who hit this hang, estimated with HyperLogLog.{" "}
-            <b>Today</b> is the current build's count. The <b>7 / 28 / 365-Day</b>{" "}
-            windows merge per-day HyperLogLog sketches across the rolling
-            timeseries, so a user who hangs on many days is counted once; the
-            denominator is all distinct users seen in that same window.
-            {resolved?.approximate && (
-              <span className="eg">
-                This row merges several stacks; their user sets can’t be unioned
-                from the published counts, so cross-day totals are summed as an
-                upper bound.
-              </span>
-            )}
+          Clients affected
+          <InfoTip label="Clients affected">
+            Distinct clients that hit this hang, estimated with HyperLogLog, as a
+            share of the clients that sent any hang report for the same build or
+            window. That is the population HangTime observes, not all Nightly
+            users: clients that never reported a hang aren&rsquo;t in it, and
+            sampling isn&rsquo;t accounted for, so this isn&rsquo;t a rate of
+            affected users.
+            <span className="eg">
+              <b>This build</b> counts one build&rsquo;s reports. The{" "}
+              <b>7 / 28 / 365-Day</b> windows merge per-day sketches, so a client
+              that hangs on many days counts once. A row covering several stacks
+              adds up each stack&rsquo;s count, and one client can hit several of
+              them, so that sum is shown as <em>up to</em>: an upper bound.
+            </span>
           </InfoTip>
-          {profile.affectedClientsSynthetic && (
-            <span className="pct"> (synthetic data)</span>
-          )}
         </h3>
-        <select
-          className="affected-window"
-          value={active}
-          onChange={(e) => setWindow(e.target.value as AffectedWindowKey)}
-          title={hasCrossDay ? undefined : "Cross-day windows need the timeseries artifact"}
-        >
-          {AFFECTED_OPTIONS.map((o) => (
-            <option
-              key={o.key}
-              value={o.key}
-              disabled={o.key !== "today" && !hasCrossDay}
-            >
-              {o.label}
-            </option>
-          ))}
-        </select>
+        {options.length > 1 && (
+          <select
+            className="affected-window"
+            value={active}
+            onChange={(e) => setPicked(e.target.value as AffectedWindowKey)}
+          >
+            {options.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
-      {active === "today" ? (
-        <TodayAffected profile={profile} signature={signature} />
+      {active === "build" ? (
+        <AffectedShare
+          users={buildUsers!}
+          total={buildTotal!}
+          upperBound={memberStacks(signature).length > 1}
+          scope="for this build"
+          note="HyperLogLog estimate"
+        />
       ) : (
         <WindowAffected resolved={resolved} windowKey={active} />
       )}
@@ -915,19 +933,28 @@ function AffectedClientsSection({
   );
 }
 
-/** Distinct affected clients for the current build day (HyperLogLog). */
-function TodayAffected({
-  profile,
-  signature,
+/**
+ * One affected-client share, worded for what the denominator really is: the
+ * clients that sent hang reports, not every user.
+ */
+function AffectedShare({
+  users,
+  total,
+  upperBound,
+  scope,
+  note,
 }: {
-  profile: ProcessedProfile;
-  signature: HangSignature;
+  users: number;
+  total: number;
+  /** Summed across stacks, so a client can be counted more than once. */
+  upperBound: boolean;
+  /** Which reports the denominator covers, e.g. "for this build". */
+  scope: string;
+  note: string;
 }) {
-  const users = signature.affectedClients;
-  const total = profile.affectedClientsTotal;
   const pct =
     total > 0
-      ? (users / total).toLocaleString(undefined, {
+      ? Math.min(users / total, 1).toLocaleString(undefined, {
           style: "percent",
           minimumFractionDigits: 2,
         })
@@ -935,20 +962,24 @@ function TodayAffected({
   return (
     <ul className="annotation-list">
       <li>
-        <code>Users affected</code>{" "}
+        <code>Clients affected</code>{" "}
         <span className="pct">
-          {pct} ({users.toLocaleString()} of {total.toLocaleString()} distinct
-          users this build)
+          {upperBound && "up to "}
+          {pct} of hang-reporting clients ({users.toLocaleString()} of{" "}
+          {total.toLocaleString()} that sent hang reports {scope})
         </span>
       </li>
       <li>
-        <span className="pct">HyperLogLog estimate.</span>
+        <span className="pct">
+          {note}
+          {upperBound ? "; summed across this row's stacks, so an upper bound" : ""}.
+        </span>
       </li>
     </ul>
   );
 }
 
-/** Distinct users affected over one trailing window (HLL-merged). */
+/** Distinct clients affected over one trailing window (HLL-merged). */
 function WindowAffected({
   resolved,
   windowKey,
@@ -958,28 +989,17 @@ function WindowAffected({
 }) {
   const win = resolved?.windows.find((w) => w.key === windowKey);
   if (!win) {
-    return <p className="muted">No cross-day data for this hang.</p>;
+    return <p className="muted">No cross-day client data for this hang.</p>;
   }
-  const pct = win.pct.toLocaleString(undefined, {
-    style: "percent",
-    minimumFractionDigits: 2,
-  });
+  const days = win.label.replace("-Day", "");
   return (
-    <ul className="annotation-list">
-      <li>
-        <code>Users affected</code>{" "}
-        <span className="pct">
-          {pct} ({win.users.toLocaleString()} of {win.totalUsers.toLocaleString()}{" "}
-          distinct users)
-        </span>
-      </li>
-      <li>
-        <span className="pct">
-          HyperLogLog estimate, merged across the trailing {win.label.replace("-Day", "")}{" "}
-          days{resolved?.approximate ? " · summed across merged stacks (upper bound)" : ""}.
-        </span>
-      </li>
-    </ul>
+    <AffectedShare
+      users={win.users}
+      total={win.totalUsers}
+      upperBound={!!resolved?.approximate}
+      scope={`over the last ${days} days`}
+      note={`HyperLogLog estimate, merged across the trailing ${days} days`}
+    />
   );
 }
 

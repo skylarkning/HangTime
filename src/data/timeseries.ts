@@ -52,9 +52,12 @@ export interface TimeseriesArtifact {
   /** Ordered build dates ("20260401") forming the shared x-axis. */
   dates: string[];
   signatures: TimeseriesSignature[];
-  /** Distinct users seen in each window, the shared denominator. */
+  /**
+   * Distinct clients seen in each window, the shared denominator. These are
+   * the clients that sent hang reports, not every Firefox or Nightly user.
+   */
   totalUsers?: WindowCounts;
-  /** Distinct users seen on each day, parallel to `dates` (daily denominator). */
+  /** Distinct hang-reporting clients on each day, parallel to `dates` (daily denominator). */
   totalAffected?: (number | null)[];
 }
 

@@ -446,11 +446,15 @@ export function Guide() {
               only called out at 1.5× or more, with at least 20 reports from it, and
               when the gap is too big to be chance.
             </Item>
-            <Item name="Affected clients">
-              Roughly how many different users hit this hang: on this build, or
-              over the last 7, 28 or 365 days. It's an estimate: users are counted
-              with a method (HyperLogLog) that never needs their IDs, and a user who
-              hangs on many days is counted once.
+            <Item name="Clients affected">
+              Roughly how many different clients hit this hang: on this build, or
+              over the last 7, 28 or 365 days. It's an estimate: clients are counted
+              with a method (HyperLogLog) that never needs their IDs, and a client
+              that hangs on many days is counted once. The share is of the clients
+              that sent hang reports, not of all Nightly users, so it isn't a rate
+              of affected users. A row covering several stacks adds their counts
+              together and is shown as <em>up to</em>. A build without client data
+              says so instead of showing a number.
             </Item>
             <Item name="Hang annotations">
               Extra context Firefox saved with the hang. For example,{" "}

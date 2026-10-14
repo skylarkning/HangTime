@@ -129,8 +129,12 @@ export interface HangSignature {
   platformStats: Record<string, number>;
   /** os -> summed hang ms, alongside platformStats' counts (platform filter). */
   platformMs: Record<string, number>;
-  /** Distinct affected clients on this day (HyperLogLog estimate). */
-  affectedClients: number;
+  /**
+   * Distinct hang-reporting clients that hit this signature on this build
+   * (HyperLogLog estimate). Absent when the build carries no client metrics.
+   * A row folding several stacks sums theirs, so it is an upper bound.
+   */
+  affectedClients?: number;
   knownBug?: KnownBug;
 }
 
@@ -149,10 +153,12 @@ export interface ProcessedProfile {
   signatures: HangSignature[];
   totalDuration: number;
   totalCount: number;
-  /** Day's distinct-client total (HLL); denominator for the % metric. */
-  affectedClientsTotal: number;
-  /** True when the count is dashboard-synthesized (no --client-metrics data). */
-  affectedClientsSynthetic: boolean;
+  /**
+   * Distinct clients that sent hang reports for this build (HLL), the
+   * denominator for the affected share. Null without client metrics. This is
+   * the hang-reporting population, not every Firefox or Nightly user.
+   */
+  affectedClientsTotal: number | null;
   /**
    * Leaf-frame group membership keyed by signature key, for signatures that are
    * members of a multi-member group. Absent when the artifact carried no
