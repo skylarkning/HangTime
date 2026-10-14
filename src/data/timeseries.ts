@@ -115,6 +115,13 @@ export interface ResolvedSeries {
   };
   /** Distinct users across all signatures on each day (daily denominator). */
   totalAffected?: (number | null)[];
+  /**
+   * Whether each day carries data for any tracked signature. A signature's
+   * null on a day that has data means it fell below the roll-up's per-day cut;
+   * on a day without data, nothing was recorded at all. Trends tell the two
+   * apart (see trend.ts).
+   */
+  dayHasData: boolean[];
   /** Present member series, sorted by descending total ms. */
   members: MemberSeries[];
 }
@@ -123,6 +130,8 @@ export class TimeseriesIndex {
   readonly dates: string[];
   readonly totalUsers: WindowCounts | undefined;
   readonly totalAffected: (number | null)[] | undefined;
+  /** Whether each day has data for any tracked signature; see ResolvedSeries. */
+  readonly dayHasData: boolean[];
   private readonly byKey: Map<string, TimeseriesSignature>;
   /** Compact stack key -> canonical key, for signatures this index tracks. */
   private canonicalByStack = new Map<string, string>();
@@ -133,8 +142,14 @@ export class TimeseriesIndex {
     this.totalUsers = artifact.totalUsers;
     this.totalAffected = artifact.totalAffected;
     this.byKey = new Map();
+    this.dayHasData = new Array<boolean>(artifact.dates.length).fill(false);
     for (const sig of artifact.signatures) {
       this.byKey.set(canonicalKeyFromFrames(sig.frames), sig);
+      sig.ms.forEach((value, i) => {
+        if (value != null) {
+          this.dayHasData[i] = true;
+        }
+      });
     }
   }
 
@@ -318,6 +333,7 @@ export class TimeseriesIndex {
       dates: this.dates,
       total,
       totalAffected: this.totalAffected,
+      dayHasData: this.dayHasData,
       members,
     };
   }

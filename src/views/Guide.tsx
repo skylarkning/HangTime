@@ -269,8 +269,8 @@ export function Guide() {
             </li>
             <li>
               <b>Check what's changed.</b> In <Link to={topHangs}>Top Hangs</Link>,
-              set <em>Trend</em> to rising or new hangs. These are usually the best
-              place to start triaging.
+              set <em>Trend</em> to <em>Increases</em> or <em>Newly tracked</em>.
+              These are usually the best place to start triaging.
             </li>
             <li>
               <b>Open a hang.</b> Click any row. Its details open on the right,
@@ -331,15 +331,19 @@ export function Guide() {
               Linux.
             </Item>
             <Item name="Trend">
-              Show only regressions, improvements, or new hangs. Trends are worked
-              out across all platforms.
+              Show only increases, decreases, or newly tracked hangs. Only changes
+              with enough data behind them count. <em>Increases</em> are ranked by
+              the time (or count) they added per day rather than by their total.
+              Trends are worked out across all platforms, so with a platform
+              picked the column reads <em>Trend (all platforms)</em>.
             </Item>
             <Item name="Time (s) and Count">
               Seconds of hanging and number of hangs for that signature on this
               build. Hover a time to see its share of the total.
             </Item>
             <Item name="Trend column">
-              How the last 7 days compare with the 7 before. See{" "}
+              How the 7 days ending on this build compare with the 7 before. Hover
+              a badge for the dates and the days behind it. See{" "}
               <button className="link" onClick={() => scrollTo("trends")}>
                 How trends are worked out
               </button>
@@ -525,10 +529,22 @@ export function Guide() {
 
         <Section id="trends">
           <p>
-            A trend compares a hang's average over the <b>last 7 days</b> with its
-            average over the <b>7 days before</b>. Single days are noisy, so a
-            weekly average gives a steadier answer. Days with no data are left out
-            instead of being counted as zero.
+            A trend compares a hang's average over the <b>7 days ending on the build
+            you're looking at</b> with its average over the <b>7 days before</b>.
+            Single days are noisy, so a weekly average gives a steadier answer.
+            Pick an older build and its trends describe that build, not the latest
+            week.
+          </p>
+          <p>
+            The history keeps only each day's top signatures, so a day can be
+            missing for two reasons. Either nothing was recorded that day for any
+            hang (<b>no data</b>), or other hangs were recorded and this one fell
+            under the cut (<b>below the cut</b>: smaller, but not necessarily zero).
+            Neither counts as zero. A percentage is only shown when both weeks have
+            at least <b>5 observed days</b>, enough hangs to mean something (20
+            hangs or 30 seconds in one of them), and the typical day moved along
+            with the average, so one bad day can't pass for a trend. Otherwise the
+            badge says what's missing.
           </p>
           <table className="guide-table">
             <thead>
@@ -540,36 +556,72 @@ export function Guide() {
             <tbody>
               <tr>
                 <td><span className="trend-badge red">↑74%</span></td>
-                <td>Up 50% or more. A regression worth a look.</td>
+                <td>An increase of 50% or more, with enough data behind it.</td>
               </tr>
               <tr>
                 <td><span className="trend-badge amber">↑31%</span></td>
-                <td>Up between 20% and 50%. Rising, keep an eye on it.</td>
+                <td>An increase between 20% and 50%. Rising, keep an eye on it.</td>
               </tr>
               <tr>
                 <td><span className="trend-badge green">↓42%</span></td>
-                <td>Down 20% or more. Improving.</td>
+                <td>A decrease of 20% or more.</td>
               </tr>
               <tr>
                 <td><span className="trend-badge neutral">stable</span></td>
                 <td>Within 20% either way.</td>
               </tr>
               <tr>
-                <td><span className="trend-badge blue">new</span></td>
+                <td><span className="trend-badge blue">newly tracked</span></td>
                 <td>
-                  Barely seen before, but real volume now (at least 20 hangs or 30
-                  seconds in the last week). A single stray hang doesn't count.
+                  Absent (or barely seen) through a recorded previous week, real
+                  volume now. It may have been there below the cut before.
                 </td>
               </tr>
               <tr>
-                <td><span className="trend-badge amber">↑ new</span></td>
-                <td>Nothing in the previous 7 days, some activity in the last 7.</td>
+                <td><span className="trend-badge neutral">partial 1/7d</span></td>
+                <td>
+                  Too few days observed in one week to compare (here 1 of 7). The
+                  hover says which week.
+                </td>
+              </tr>
+              <tr>
+                <td><span className="trend-badge neutral">no baseline</span></td>
+                <td>Seen recently, but the previous week has no data to compare with.</td>
+              </tr>
+              <tr>
+                <td><span className="trend-badge neutral">no recent data</span></td>
+                <td>Nothing was recorded for any hang in the recent week.</td>
+              </tr>
+              <tr>
+                <td><span className="trend-badge neutral">below cut</span></td>
+                <td>
+                  Recorded days in the recent week, but this hang fell under the cut
+                  on all of them. Probably smaller, by an unknown amount.
+                </td>
+              </tr>
+              <tr>
+                <td><span className="trend-badge amber">spike</span></td>
+                <td>
+                  The weekly averages differ, but only because of a day or two: the
+                  typical (median) day didn't move. The hover names the day. Grey
+                  when the spike was in the earlier week.
+                </td>
+              </tr>
+              <tr>
+                <td><span className="trend-badge neutral">low volume</span></td>
+                <td>Both weeks covered, but too few hangs either side for a percentage.</td>
+              </tr>
+              <tr>
+                <td><span className="trend-badge neutral">no history</span></td>
+                <td>The build isn't in the history window.</td>
               </tr>
             </tbody>
           </table>
           <p className="guide-note">
-            Red and amber both count as regressions in the Trend filter and in
-            Needs attention.
+            Hover a badge to see the dates compared, how many days of each week
+            were observed, both averages and the change per day. Only red, amber
+            and green badges count in the Trend filter, and increases are ranked by
+            the time they added per day.
           </p>
           <p className="guide-note">
             Trends need the timeseries data. If it hasn't loaded, trend badges are

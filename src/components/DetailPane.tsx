@@ -7,7 +7,7 @@ import type {
 } from "@/processing/types";
 import type { FramePair } from "@/data/schema";
 import type { TimeseriesIndex } from "@/data/timeseries";
-import { computeTrend, trendBadge } from "@/data/trend";
+import { computeTrend, trendSentence } from "@/data/trend";
 import { buildBugReport } from "@/data/bugReport";
 import {
   classifyStack,
@@ -82,15 +82,12 @@ export function DetailPane({
   }
   const frames = resolveFrames(profile, signature.frameKeys);
 
-  let trendNote: string | undefined;
+  // The bug comment states the trend with its dates and coverage, so whoever
+  // reads it can judge the claim without opening the dashboard.
   const series = timeseries?.resolveByStack(memberStacks(signature));
-  if (series) {
-    const badge = trendBadge(computeTrend(series, "ms"));
-    trendNote =
-      badge.text === "stable" || badge.text === "new"
-        ? badge.text
-        : `${badge.text} vs prior 7d`;
-  }
+  const trendNote = series
+    ? trendSentence(computeTrend(series, "ms", { endDate: profile.date }))
+    : undefined;
 
   return (
     <div className="detail-pane" ref={paneRef}>
@@ -120,7 +117,7 @@ export function DetailPane({
         flash={flash}
       />
 
-      <TimeseriesChart index={timeseries} signature={signature} />
+      <TimeseriesChart index={timeseries} signature={signature} endDate={profile.date} />
 
       <LeafGroupSection
         profile={profile}

@@ -37,6 +37,30 @@ export function formatShare(value: number, total: number): string {
   });
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Two "YYYYMMDD" build dates as a short span: "Oct 4-10", "Sep 27-Oct 3", or
+ * "Oct 4" when they're the same day. Falls back to the raw strings otherwise.
+ */
+export function formatDateRange(start: string, end: string): string {
+  const parse = (date: string) =>
+    /^\d{8}$/.test(date)
+      ? { month: MONTHS[Number(date.slice(4, 6)) - 1], day: Number(date.slice(6, 8)) }
+      : null;
+  const a = parse(start);
+  const b = parse(end);
+  if (!a || !b) {
+    return start === end ? start : `${start} to ${end}`;
+  }
+  if (start === end) {
+    return `${a.month} ${a.day}`;
+  }
+  return a.month === b.month
+    ? `${a.month} ${a.day}-${b.day}`
+    : `${a.month} ${a.day}-${b.month} ${b.day}`;
+}
+
 /** A "YYYYMMDD" build-date string as "YYYY-MM-DD". */
 export function formatDate(date: string): string {
   if (/^\d{8}$/.test(date)) {
