@@ -146,7 +146,15 @@ function StackSection({ frames, filter }: { frames: Frame[]; filter: string }) {
             <b>Searchfox</b> and <b>GitHub</b> open a JavaScript frame&rsquo;s file at
             its line. For a C++ frame, <b>Searchfox</b> searches for the function,
             which leads to its definition: the hang data doesn&rsquo;t carry C++ file
-            and line numbers yet. Links show the current source, so a line can
+            and line numbers yet (
+            <a
+              href="https://bugzilla.mozilla.org/show_bug.cgi?id=2081894"
+              target="_blank"
+              rel="noreferrer"
+            >
+              bug 2081894
+            </a>
+            ). Links show the current source, so a line can
             have moved if the file changed since this build.
           </span>
         </InfoTip>

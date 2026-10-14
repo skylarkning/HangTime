@@ -12,7 +12,7 @@
  * about nine JS frames in ten resolve.
  *
  * Native frames have no file or line in the hang data (the aggregation job
- * doesn't keep them yet), so a Firefox frame links to a Searchfox search for
+ * doesn't keep them yet; bug 2081894), so a Firefox frame links to a Searchfox search for
  * its function, which leads to the definition.
  *
  * Links go to the current source, not the build's revision, so a line number
