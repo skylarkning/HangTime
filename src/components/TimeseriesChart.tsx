@@ -54,6 +54,7 @@ import {
   topSegmentRadius,
 } from "./barStyle";
 import { InfoTip } from "./InfoTip";
+import { useTheme } from "@/state/theme";
 
 /**
  * Draw a dashed vertical line at each Firefox train milestone that lands in the
@@ -67,7 +68,7 @@ const releaseMarkersPlugin: Plugin<"bar"> = {
   id: "releaseMarkers",
   afterDatasetsDraw(chart) {
     const opts = (chart.options.plugins as Record<string, unknown> | undefined)
-      ?.releaseMarkers as { markers?: ReleaseColumnMarker[] } | undefined;
+      ?.releaseMarkers as { markers?: ReleaseColumnMarker[]; colors?: Record<string, string> } | undefined;
     const markers = opts?.markers;
     if (!markers || markers.length === 0) {
       return;
@@ -93,7 +94,7 @@ const releaseMarkersPlugin: Plugin<"bar"> = {
       ctx.beginPath();
       ctx.setLineDash([4, 3]);
       ctx.lineWidth = 1;
-      ctx.strokeStyle = PHASE_META[marker.events[0].phase].color;
+      ctx.strokeStyle = opts?.colors?.[marker.events[0].phase] ?? PHASE_META[marker.events[0].phase].color;
       ctx.moveTo(px, chartArea.top);
       ctx.lineTo(px, chartArea.bottom);
       ctx.stroke();
@@ -113,7 +114,7 @@ const releaseMarkersPlugin: Plugin<"bar"> = {
       }
       lastLabelEnd = startX + width;
       marker.events.forEach((event, i) => {
-        ctx.fillStyle = PHASE_META[event.phase].color;
+        ctx.fillStyle = opts?.colors?.[event.phase] ?? PHASE_META[event.phase].color;
         ctx.fillText(labels[i], labelX, chartArea.top + 1 + i * 12);
       });
     }
@@ -130,8 +131,6 @@ Chart.register(
   releaseMarkersPlugin,
 );
 
-/** A plain signature's single series, in the dashboard's accent blue. */
-const SINGLE_COLOR = "#0250bb";
 /**
  * Member stacks of a bug, in fixed order (blue, orange, aqua, yellow, magenta).
  * Checked with the dataviz palette validator: colorblind-safe between
@@ -139,6 +138,7 @@ const SINGLE_COLOR = "#0250bb";
  * the tooltip and the member list.
  */
 const MEMBER_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
+const DARK_MEMBER_COLORS = ["#64a8ff", "#ff9f66", "#65d6b0", "#f2cd70", "#ef9ac3"];
 /** The members past the top few, summed: neutral, so it recedes. */
 const OTHER_COLOR = "#c2c2cb";
 const MAX_MEMBER_LINES = MEMBER_COLORS.length;
@@ -220,6 +220,10 @@ function memberLabels(members: MemberSeries[]): string[] {
 
 
 export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartProps) {
+  const dark = useTheme() === "dark";
+  const memberColors = dark ? DARK_MEMBER_COLORS : MEMBER_COLORS;
+  const textColor = dark ? "#b0b0b6" : "#6e6e73";
+  const surfaceColor = dark ? "#1c1c1e" : BAR_SEPARATOR_COLOR;
   const [metric, setMetric] = useState<Metric>("ms");
   const [showAll, setShowAll] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
@@ -317,7 +321,7 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
       backgroundColor: color,
       borderRadius: topSegmentRadius,
       borderSkipped: false,
-      borderColor: BAR_SEPARATOR_COLOR,
+      borderColor: surfaceColor,
       borderWidth: barBorderWidth,
       ...extra,
     });
@@ -335,7 +339,7 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
         `#${i + 1} ${memberLabelsAll[i]}`,
         stackPath(member),
         pick(member),
-        MEMBER_COLORS[i],
+        memberColors[i],
         { stack: "members" },
       );
     });
@@ -357,13 +361,13 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
         `Other ${rest.length} stack${rest.length === 1 ? "" : "s"}`,
         `The ${rest.length} smaller stacks merged into this bug, summed`,
         restTotal,
-        OTHER_COLOR,
+        dark ? "#636366" : OTHER_COLOR,
         { stack: "members" },
       );
     }
   } else {
     const only = series.members[0];
-    addBars(shortFunc(only.label), stackPath(only), pick(only), SINGLE_COLOR);
+    addBars(shortFunc(only.label), stackPath(only), pick(only), dark ? "#64a8ff" : "#0250bb");
   }
   const dayTotals = pick(series.total);
 
@@ -384,6 +388,12 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
     plugins: {
       legend: { display: false },
       tooltip: {
+        backgroundColor: dark ? "#2c2c2e" : "#1d1d1f",
+        titleColor: "#f5f5f7",
+        bodyColor: "#f5f5f7",
+        footerColor: "#f5f5f7",
+        borderColor: dark ? "#48484a" : "#1d1d1f",
+        borderWidth: 1,
         // Only the stacks that had something that day.
         filter: (item) => item.raw != null && item.raw !== 0,
         callbacks: {
@@ -440,9 +450,12 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
       x: {
         stacked: true,
         grid: { display: false },
-        ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8 },
+        border: { color: dark ? "#38383a" : "#e8e8ed" },
+        ticks: { color: textColor, maxRotation: 0, autoSkip: true, autoSkipPadding: 14, maxTicksLimit: 8 },
       },
       y: {
+        grid: { color: dark ? "#38383a" : "#e8e8ed" },
+        border: { display: false },
         stacked: true,
         beginAtZero: true,
         // A chart too wide for its box opens scrolled to the newest days, so
@@ -453,6 +466,7 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
         // ("16M"), and no axis title; the ms/count toggle names the unit and the
         // tooltip gives exact values.
         ticks: {
+          color: textColor,
           maxTicksLimit: 3,
           callback: (value) =>
             Number(value).toLocaleString(undefined, {
@@ -466,6 +480,7 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
   // Custom plugin options (not part of Chart.js's typed plugin map).
   (options.plugins as Record<string, unknown>).releaseMarkers = {
     markers: releaseMarkers,
+    colors: dark ? { beta: "#f2bd68", nightly: "#64a8ff", release: "#77d99c" } : undefined,
   };
 
   return (
@@ -494,9 +509,9 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
               view of the bug. Tick <em>Fx releases</em> to mark
               the Firefox train milestones (<code>Fx NN</code>) as vertical
               lines, so a spike or a new hang can be lined up against a release:{" "}
-              <em style={{ color: "#d76e00" }}>orange = Release</em>,{" "}
-              <em style={{ color: "#0250bb" }}>blue = Beta</em>,{" "}
-              <em style={{ color: "#058b00" }}>green = Nightly</em>.
+              <em style={{ color: "var(--orange)" }}>orange = Release</em>,{" "}
+              <em style={{ color: "var(--blue)" }}>blue = Beta</em>,{" "}
+              <em style={{ color: "var(--green)" }}>green = Nightly</em>.
               {affected && (
                 <>
                   {" "}
@@ -591,7 +606,7 @@ export function TimeseriesChart({ index, signature, endDate }: TimeseriesChartPr
                     className="member-rank"
                     style={{
                       color:
-                        i < MAX_MEMBER_LINES ? MEMBER_COLORS[i] : "var(--muted-2)",
+                        i < MAX_MEMBER_LINES ? memberColors[i] : "var(--muted-2)",
                     }}
                   >
                     #{i + 1}
