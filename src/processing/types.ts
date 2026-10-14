@@ -50,6 +50,8 @@ export interface ResolvedGroupMember {
 export interface ResolvedGroup {
   groupKey: string;
   displayName: string;
+  /** The meaningful frame every member shares, which the group is keyed by. */
+  leafFrame: FramePair;
   memberCount: number;
   totalMs: number;
   totalCount: number;

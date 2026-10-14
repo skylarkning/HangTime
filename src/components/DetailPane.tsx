@@ -27,13 +27,17 @@ import {
 import { resolveFrames } from "@/processing/select";
 import { platformBaseline, platformSkew } from "@/data/platformSkew";
 import { platformLabel } from "@/data/platforms";
-import { formatCount, formatDate, formatSeconds } from "@/format";
+import { formatCount, formatDate, formatSeconds, formatShare } from "@/format";
 import { frameLabel, isOwnCode } from "@/frames";
 import { Highlight } from "./Highlight";
 import { InfoTip } from "./InfoTip";
 import { StackDiff } from "./StackDiff";
 import { TimeseriesChart } from "./TimeseriesChart";
 import { HangSummary, evidenceMarks } from "./HangSummary";
+import { GroupRelationNote } from "./GroupRelationNote";
+import { shortSymbol } from "./HangName";
+import { explainGroup, type ClassifiedMember } from "@/data/groupRelation";
+import { activityText, hangTitle } from "@/data/hangAreas";
 import { memberStacks } from "@/processing/signatureKey";
 
 interface DetailPaneProps {
@@ -533,6 +537,18 @@ function LeafGroupSection({
     return [...byVariant.values()].sort((a, b) => b.duration - a.duration);
   }, [members, signature.stackKey]);
 
+  // Each member's own description and the frame that sets it apart, so a row
+  // can say what it is and how it differs, not only where it branches off.
+  const classifiedByKey = useMemo(() => {
+    const map = new Map<string, ClassifiedMember>();
+    if (group) {
+      for (const m of explainGroup(profile, group).members) {
+        map.set(m.member.key, m);
+      }
+    }
+    return map;
+  }, [profile, group]);
+
   // The section starts folded to the group name; a compare selection (max two)
   // drives the side-by-side stack diff. All reset when the selected signature
   // moves to a different group.
@@ -563,13 +579,26 @@ function LeafGroupSection({
   const rawLeafLabel = (m: ResolvedGroupMember): string =>
     frameLabel(resolveFrames(profile, m.frameKeys.slice(0, 1))[0]);
   const singleVariant = variants.length === 1;
+  // The frame that sets a variant apart from the rest of the group.
+  const variantFrame = (v: GroupVariant): FramePair | null =>
+    classifiedByKey.get(v.rep.key)?.distinguishing ?? v.firstUniqueFrame;
   const variantLabel = (v: GroupVariant): string => {
-    const f = v.firstUniqueFrame;
+    const f = variantFrame(v);
     if (!f) {
-      return "identical (differs only in system / event-loop frames)";
+      return "same meaningful stack (differs only in system or event-loop frames)";
     }
-    return f[1] ? `${f[0]} ${f[1]}` : f[0];
+    return f[1] ? `${shortSymbol(f[0])} ${f[1]}` : shortSymbol(f[0]);
   };
+  // "Startup cache: lock wait during JS module loading", for a member row.
+  const describe = (m: ResolvedGroupMember): string => {
+    const kind = classifiedByKey.get(m.key)?.kind;
+    if (!kind) {
+      return "";
+    }
+    const activity = activityText(kind);
+    return activity ? `${hangTitle(kind)} ${activity}` : hangTitle(kind);
+  };
+  const share = (ms: number) => formatShare(ms, group.totalMs);
   // A group member's stack belongs to a displayed signature (its own row, or a
   // bug it was folded into); clicking inspects that signature.
   const selectMember = (m: ResolvedGroupMember) => {
@@ -613,9 +642,10 @@ function LeafGroupSection({
             <button className="group-member-main" onClick={() => selectMember(m)}>
               <span className="member-arrow">↳</span>
               <Highlight text={rawLeafLabel(m)} needle={filter} />
+              <span className="variant-title">{describe(m)}</span>
             </button>
-            <span className="group-member-stat">
-              {formatSeconds(m.ms)}s · {formatCount(m.count)}
+            <span className="group-member-stat" title="Share of the group's hang time">
+              {share(m.ms)} · {formatSeconds(m.ms)}s · {formatCount(m.count)}
             </span>
           </li>
         );
@@ -634,9 +664,17 @@ function LeafGroupSection({
           same Firefox problem collapse together even when the raw leaf (a sleep,
           a <code>memcpy</code>, a <code>free</code>) differs. <b>Show in the
           list</b> narrows the hang list on the left to the group&rsquo;s stacks.{" "}
-          <b>Compare stacks</b> opens the distinct variants (each labeled by its
-          branch frame) here, so you can tick two and diff them to confirm the
-          merge is right.
+          <b>Compare stacks</b> opens the distinct variants (each labeled by the
+          frame that sets it apart, its own description, and its share of the
+          group&rsquo;s time) here, so you can tick two and diff them to confirm
+          the merge is right.
+          <span className="eg">
+            Sharing a frame isn&rsquo;t sharing a cause. The label under the name says
+            how alike the stacks are: <b>Same bug</b>; <b>Similar call paths</b> (mostly
+            one caller, likely related); <b>Shared blocking mechanism</b> (one wait
+            reached from different callers, possibly several problems); or{" "}
+            <b>Shared code, different callers</b>.
+          </span>
         </InfoTip>
       </h3>
       <div className="group-head">
@@ -653,6 +691,7 @@ function LeafGroupSection({
           </span>
         )}
       </div>
+      <GroupRelationNote profile={profile} group={group} />
       <div className="group-actions">
         {activeGroup === groupKey ? (
           <button className="btn secondary" onClick={() => onShowGroup(null)}>
@@ -704,15 +743,18 @@ function LeafGroupSection({
                     <button
                       className="group-member-main"
                       onClick={() => selectMember(v.rep)}
+                      title={variantFrame(v)?.join(" ")}
                     >
                       <span className="member-arrow">↳</span>
                       <Highlight text={variantLabel(v)} needle={filter} />
                       {v.memberCount > 1 && (
                         <span className="variant-count">×{v.memberCount}</span>
                       )}
+                      <span className="variant-title">{describe(v.rep)}</span>
                     </button>
-                    <span className="group-member-stat">
-                      {formatSeconds(v.duration)}s · {formatCount(v.count)}
+                    <span className="group-member-stat" title="Share of the group's hang time">
+                      {share(v.duration)} · {formatSeconds(v.duration)}s ·{" "}
+                      {formatCount(v.count)}
                     </span>
                   </li>
                 );

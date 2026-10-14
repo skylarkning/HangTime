@@ -429,9 +429,22 @@ export function Guide() {
               top of the stack (one stuck in a lock, another in <code>memcpy</code>
               ) are grouped by their first meaningful Firefox frame.{" "}
               <em>Show … stacks in the list</em> narrows the hang list on the left
-              to that group; <em>Show all hangs</em> in the banner above the list
+              to that group, one row per stack, each led by the frame that sets it
+              apart from the others, with its own description and its share of the
+              group&rsquo;s time; <em>Show all hangs</em> in the banner above the list
               goes back. <em>Compare stacks</em> lists the group's variants here,
               so you can tick two and compare them side by side.
+              <br />
+              Sharing a frame isn&rsquo;t sharing a cause, so a label says how alike
+              the stacks are. <em>Same bug</em>: one bug already tracks them all.{" "}
+              <em>Similar call paths</em>: mostly one caller and area, so likely
+              related, though not confirmed. <em>Shared blocking mechanism</em>: one
+              wait (a lock, synchronous IPC, file I/O) reached from different callers
+              or areas, possibly several problems that one fix won&rsquo;t all cover.{" "}
+              <em>Shared code, different callers</em>: the same non-blocking code (a
+              hash-table lookup, say) called from different places, best checked one
+              stack at a time. Callers or areas count as different when none of them
+              accounts for 60% of the group&rsquo;s hang time.
             </Item>
             <Item name="File a bug">
               Opens a new Bugzilla bug with the summary, stack, numbers and{" "}
