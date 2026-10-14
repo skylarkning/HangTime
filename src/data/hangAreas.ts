@@ -438,7 +438,14 @@ const MECHANISM_RULES: MechanismRule[] = [
   { match: "RtlpWaitOnCriticalSection", mechanism: "lock-wait" },
   { match: "NtWaitForAlertByThreadId", mechanism: "lock-wait" },
   { match: "NtWaitForKeyedEvent", mechanism: "lock-wait" },
-  { match: "MutexImpl::lock", mechanism: "lock-wait" },
+  { match: "MutexImpl::", mechanism: "lock-wait" },
+  { match: "FutexImpl", mechanism: "lock-wait" },
+  { match: "LockContended", mechanism: "lock-wait" },
+  { match: "Mutex::Lock", mechanism: "lock-wait" },
+  { match: "Mutex::Unlock", mechanism: "lock-wait" },
+  { match: "Monitor::Wait", mechanism: "lock-wait" },
+  { match: "CondVar::Wait", mechanism: "lock-wait" },
+  { match: "AutoLock<MaybeMutex>", mechanism: "lock-wait" },
   { match: "ConditionVariableImpl::wait", mechanism: "lock-wait" },
   { match: "OffTheBooksMutex", mechanism: "lock-wait" },
   { match: "OffTheBooksCondVar", mechanism: "lock-wait" },
@@ -521,6 +528,29 @@ const MECHANISM_RULES: MechanismRule[] = [
   { match: "chunk_dealloc", mechanism: "memory-alloc" },
   { match: "chunk_alloc", mechanism: "memory-alloc" },
   { match: "chunk_recycle", mechanism: "memory-alloc" },
+  { match: "idalloc", mechanism: "memory-alloc" },
+  { match: "iralloc", mechanism: "memory-alloc" },
+  { match: "imalloc", mechanism: "memory-alloc" },
+  { match: "icalloc", mechanism: "memory-alloc" },
+  { match: "ipalloc", mechanism: "memory-alloc" },
+  { match: "huge_dalloc", mechanism: "memory-alloc" },
+  { match: "huge_ralloc", mechanism: "memory-alloc" },
+  { match: "huge_malloc", mechanism: "memory-alloc" },
+  { match: "huge_palloc", mechanism: "memory-alloc" },
+  { match: "PageMalloc", mechanism: "memory-alloc" },
+  { match: "PageCalloc", mechanism: "memory-alloc" },
+  { match: "PageRealloc", mechanism: "memory-alloc" },
+  { match: "PageMemalign", mechanism: "memory-alloc" },
+  { match: "pod_malloc", mechanism: "memory-alloc" },
+  { match: "pod_calloc", mechanism: "memory-alloc" },
+  { match: "pod_realloc", mechanism: "memory-alloc" },
+  { match: "pod_arena_", mechanism: "memory-alloc" },
+  { match: "MallocCharsOnPromotion", mechanism: "memory-alloc" },
+  { match: "arena_run_", mechanism: "memory-alloc" },
+  { match: "__rust_alloc", mechanism: "memory-alloc" },
+  { match: "__rust_realloc", mechanism: "memory-alloc" },
+  { match: "__rust_dealloc", mechanism: "memory-alloc" },
+  { match: "alloc::raw_vec::", mechanism: "memory-alloc" },
   { match: "PageFree", mechanism: "memory-alloc" },
   { match: "operator new", mechanism: "memory-alloc" },
   { match: "operator delete", mechanism: "memory-alloc" },
@@ -593,7 +623,11 @@ const MECHANISM_RULES: MechanismRule[] = [
   { match: "CycleCollectedJSRuntime::", mechanism: "cc" },
 ];
 
-/** How far from the leaf an activity is looked for. */
+/**
+ * How far from the leaf an activity is looked for, counting only frames that
+ * do something: lock and allocator internals and glue don't count, so a
+ * ten-frame realloc chain under `JSON.stringify` doesn't hide it.
+ */
 const ACTIVITY_DEPTH = 16;
 
 // -- Areas --------------------------------------------------------------------
@@ -1349,15 +1383,19 @@ export function classifyStack(
   let phase = -1;
   let firstWork = -1;
   let firstSystem = -1;
+  let distance = 0;
   for (let d = 0; d < n; d++) {
     const f = frameKeys[d];
     const rule = mechRule[f];
     const flag = flags[f];
     const info = rule >= 0 ? MECHANISMS[MECHANISM_RULES[rule].mechanism] : null;
+    if (!info?.family && !(flag & (FLAG_PLUMBING | FLAG_SENTINEL))) {
+      distance++;
+    }
     if (info) {
       if (info.kind === "boundary" && boundary < 0 && firstWork < 0) {
         boundary = d;
-      } else if (info.kind === "activity" && activity < 0 && d < ACTIVITY_DEPTH) {
+      } else if (info.kind === "activity" && activity < 0 && distance <= ACTIVITY_DEPTH) {
         activity = d;
       } else if (info.kind === "phase" && phase < 0) {
         phase = d;
