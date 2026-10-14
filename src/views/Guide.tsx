@@ -556,9 +556,19 @@ export function Guide() {
           <p>
             <b>Build date</b>, at the top of Top Hangs and Overview, shows which
             Nightly build you're looking at. Click the date and pick another to see
-            an older build. <em>Back to latest build</em> returns to the newest one.
-            A build only exists once the daily job has processed it, about four days
-            after it shipped.
+            an older build. <em>Latest build</em> next to it means you're following
+            the newest one; <em>Back to latest build</em> returns to it. A build only
+            exists once the daily job has processed it, about four days after it
+            shipped.
+          </p>
+          <p>
+            The rest of the bar says what the numbers cover. First, which
+            hangs: the channel, process and thread they were recorded on (for
+            example <em>Firefox Nightly · Parent process · Gecko (main thread)</em>).
+            Then which reports: <em>reports through Oct 14</em> is the last
+            day whose reports count toward the build. <em>Window open</em> in orange
+            means the build was processed before that day, so it is missing whole
+            days of reports and reads lower than its neighbours.
           </p>
           <p>
             Hang reports can be grouped by <b>build date</b> or by{" "}
@@ -568,7 +578,7 @@ export function Guide() {
             reports come from many builds. HangTime groups by build date: each build,
             and each day on the charts, is one Nightly build's hangs, so a change can
             be traced to the code that caused it. A build's reports keep arriving for
-            days after it ships; those received up to five days after the build date
+            days after it ships; those received within five days of the build date
             are counted.
           </p>
           <p>
