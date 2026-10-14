@@ -29,6 +29,7 @@ import {
 } from "@/data/investigations";
 import type { BugFilter, ViewState } from "@/state/useViewState";
 import { byArea, byMechanism } from "@/data/areaBreakdown";
+import { GroupRelationNote } from "@/components/GroupRelationNote";
 
 export function Explorer() {
   const { state, update } = useViewState();
@@ -197,6 +198,7 @@ export function Explorer() {
                 <span className="group-badge">
                   {group.memberCount.toLocaleString()} stacks
                 </span>
+                <GroupRelationNote profile={profile} group={group} />
               </>
             ) : (
               <span>That near-duplicate group isn’t in this build.</span>

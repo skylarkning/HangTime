@@ -364,6 +364,7 @@ function buildResolvedGroups(
     byGroup[groupKey] = {
       groupKey,
       displayName: group.displayName,
+      leafFrame: group.leafFrame,
       memberCount: group.memberCount,
       totalMs: group.totalMs,
       totalCount: group.totalCount,
