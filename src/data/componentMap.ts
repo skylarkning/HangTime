@@ -12,7 +12,9 @@
  *
  * Rules are deliberately conservative: when nothing above the plumbing matches,
  * this returns null and the UI asks the reporter to choose rather than sending
- * a bug to the wrong team.
+ * a bug to the wrong team. A rule's weight decides between matches; it is not
+ * a measure of confidence, so the UI shows the matching frame instead, and
+ * says when the match is only a broad one.
  */
 
 import type { Frame } from "@/processing/types";
@@ -23,8 +25,12 @@ export interface BugComponent {
 }
 
 export interface Suggestion extends BugComponent {
-  /** Confidence in the match, from the rule's weight. */
-  confidence: "high" | "medium" | "low";
+  /**
+   * Why the reporter should double-check it, or null: the rule only names a
+   * broad namespace or shared layer, or the deciding frame is far from where
+   * the thread was stuck.
+   */
+  caveat: "broad-rule" | "deep" | null;
   /** The text that matched, for showing the reporter why. */
   matched: string;
   /** Depth of the deciding frame in the stack (0 = leaf). */
@@ -266,18 +272,39 @@ const RULES: Rule[] = [
   { match: "mozilla::IOUtils", product: "Core", component: "DOM: Core & HTML", weight: 1 },
 ];
 
+/**
+ * Rules that only say roughly where a hang is: namespaces that span many
+ * components, JS locations that file into a "General" component, and shared
+ * layers (widget plumbing, the allocator). Weight-1 rules count too.
+ */
+const BROAD_RULES = new Set([
+  "mozilla::dom::",
+  "mozilla::widget::",
+  "mozilla::layers::",
+  "mozilla::gfx::",
+  "mozilla::net::",
+  "mozilla::ipc::",
+  "js::jit::",
+  "browser/content/",
+  "browser/modules/",
+  "gre/modules/",
+  "global/content/",
+  "/actors/",
+  "nsWindow::",
+  "nsAppShell",
+  "mozjemalloc",
+  "arena_t",
+  "AllocInfo",
+]);
+
+/** Past this depth, a deciding frame is a long way from where the thread was stuck. */
+const DEEP_FRAME = 12;
+
 /** A frame's symbol without its argument list, which names types it merely uses. */
 function symbolOf(funcName: string): string {
   const paren = funcName.indexOf("(");
   return paren <= 0 ? funcName : funcName.slice(0, paren);
 }
-
-const CONFIDENCE: Record<Weight, Suggestion["confidence"]> = {
-  4: "high",
-  3: "high",
-  2: "medium",
-  1: "low",
-};
 
 /**
  * The strongest owner named anywhere in the stack, preferring the frame nearest
@@ -307,7 +334,12 @@ export function classifyStack(
       best = {
         product: rule.product,
         component: rule.perPlatform ? WIDGET[platform] : rule.component,
-        confidence: CONFIDENCE[rule.weight],
+        caveat:
+          rule.weight === 1 || BROAD_RULES.has(rule.match)
+            ? "broad-rule"
+            : depth > DEEP_FRAME
+              ? "deep"
+              : null,
         matched: rule.match,
         frameIndex: depth,
         frameName: frame.funcName,

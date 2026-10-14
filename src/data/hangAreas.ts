@@ -1056,6 +1056,11 @@ const PLUMBING = [
   "IProtocol::",
   "XREMain",
   "XRE_main",
+  "nsAppStartup::Run",
+  "NS_internal_main",
+  "BootstrapImpl",
+  "__scrt_common_main",
+  "RunMicroTask",
   "RefPtr<",
   "nsCOMPtr<",
   "already_AddRefed<",
@@ -1270,6 +1275,12 @@ function matchFrame(symbol: string, areaText: string, lib: string): [number, num
   return [mech < MECHANISM_RULES.length ? mech : -1, area < AREA_RULES.length ? area : -1];
 }
 
+/**
+ * Process entry points, at the root of every main-thread stack. Matched whole,
+ * since "main" is part of too many other names.
+ */
+const ENTRY_POINTS = new Set(["main", "wmain", "do_main", "content_process_main"]);
+
 const PLUMBING_RE = new RegExp(
   PLUMBING.map((s) => s.replace(/[[\]{}()*+?.\\^$|/]/g, "\\$&")).join("|"),
 );
@@ -1299,7 +1310,7 @@ export function buildFrameTable(funcNames: string[], libNames: string[]): FrameT
     if (JS_ENGINE.test(symbol)) {
       flag |= FLAG_JS_ENGINE;
     }
-    if (PLUMBING_RE.test(symbol)) {
+    if (PLUMBING_RE.test(symbol) || ENTRY_POINTS.has(symbol)) {
       flag |= FLAG_PLUMBING;
     }
     // JS frames carry their file path; match the whole name so the path counts.
@@ -1307,6 +1318,38 @@ export function buildFrameTable(funcNames: string[], libNames: string[]): FrameT
     flags[f] = flag;
   }
   return { mechanism, area, flags };
+}
+
+/**
+ * Why a frame is shared low-level code rather than something specific to one
+ * hang: a frame a mechanism rule matches (a lock primitive, `memcpy`,
+ * `CreateFileW`), an OS library, or glue (bindings, the event loop, string
+ * and container boilerplate). Null for a distinctive Firefox frame.
+ */
+export type GenericFrame =
+  | { kind: "mechanism"; mechanism: MechanismId }
+  | { kind: "system" }
+  | { kind: "glue" };
+
+export function describeGeneric(table: FrameTable, funcIndex: number): GenericFrame | null {
+  const flag = table.flags[funcIndex];
+  const rule = table.mechanism[funcIndex];
+  if (rule >= 0) {
+    return { kind: "mechanism", mechanism: MECHANISM_RULES[rule].mechanism };
+  }
+  // JS engine internals (property lookup, the interpreter) run under every
+  // script, so they say nothing about which one.
+  if (flag & (FLAG_SENTINEL | FLAG_PLUMBING | FLAG_JS_ENGINE)) {
+    return { kind: "glue" };
+  }
+  if (!(flag & (FLAG_MOZILLA | FLAG_JS))) {
+    return { kind: "system" };
+  }
+  return null;
+}
+
+export function isGenericFrame(table: FrameTable, funcIndex: number): boolean {
+  return describeGeneric(table, funcIndex) !== null;
 }
 
 // -- Classifying a stack ------------------------------------------------------
