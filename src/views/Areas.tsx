@@ -2,7 +2,9 @@
  * Where a build's hang time goes: by area of the browser (fonts, the startup
  * cache, the OS shell, navigation...), by mechanism (file I/O, lock waits,
  * synchronous IPC...), and by when it happens (startup, while the user was
- * interacting). Each row opens Top Hangs narrowed to it.
+ * interacting). Each row opens Top Hangs narrowed to it. Above them, the
+ * saved investigations as a queue, and a note of what the data does and
+ * doesn't cover.
  *
  * Replaces the old Overview page, whose summaries repeated the hang list and
  * whose volume chart summed only the signatures the timeseries happens to
@@ -11,14 +13,19 @@
 
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useProcessedProfile } from "@/queries/hooks";
+import { useBugs, useProcessedProfile, useTimeseries, useTrendById } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
 import type { ThreadKind } from "@/data/dataSource";
 import type { HangSignature } from "@/processing/types";
 import { byArea, byContext, byMechanism, type BreakdownRow } from "@/data/areaBreakdown";
 import { NO_AREA } from "@/data/hangAreas";
 import { PLATFORMS, platformLabel, type Platform } from "@/data/platforms";
-import { formatCount, formatSeconds, formatShare } from "@/format";
+import { formatCount, formatDateRange, formatSeconds, formatShare } from "@/format";
+import { narrowSignatures } from "@/processing/select";
+import { INVESTIGATIONS, investigationNarrowing } from "@/data/investigations";
+import { formatDelta, type TrendSummary } from "@/data/trend";
+import type { TimeseriesIndex } from "@/data/timeseries";
+import type { ProcessedProfile } from "@/processing/types";
 import { BuildBar } from "@/components/BuildBar";
 import { InfoTip } from "@/components/InfoTip";
 import { LoadingProgress } from "@/components/LoadingProgress";
@@ -30,6 +37,9 @@ export function Areas() {
   const { state, update } = useViewState();
   const { search } = useLocation();
   const query = useProcessedProfile(state.thread as ThreadKind, state.date);
+  const timeseries = useTimeseries(state.thread as ThreadKind);
+  const bugs = useBugs();
+  const trendById = useTrendById(query.data, timeseries.data, "ms");
   const platform = state.platform;
 
   // On one platform, every number is that platform's share of each hang.
@@ -107,6 +117,24 @@ export function Areas() {
           </select>
         </label>
       </div>
+      <div className="areas-top">
+        <InvestigationQueue
+          profile={query.data}
+          trendById={trendById}
+          hasHistory={!!timeseries.data}
+          platform={platform}
+          durationOf={measures.durationOf}
+          total={total}
+        />
+        <DataCard
+          profile={query.data}
+          index={timeseries.data}
+          trendById={trendById}
+          bugsFailed={bugs.isError}
+          unattributed={unattributed}
+          total={total}
+        />
+      </div>
       <div className="areas-grid">
         <BreakdownCard
           title="By area"
@@ -148,8 +176,7 @@ export function Areas() {
       <ContextCard rows={contexts} total={total} />
       <p className="areas-note">
         Areas and mechanisms are read from function and library names, since the hang
-        data carries no source paths. {formatShare(unattributed, total)} of hang
-        time has no recognised area. See the{" "}
+        data carries no source paths. See the{" "}
         <Link to={{ pathname: "/guide", search }}>
           Guide
         </Link>{" "}
@@ -281,6 +308,199 @@ function ContextCard({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * The saved investigations as a queue: how many hangs each finds on this build
+ * and how much of the hang time they hold, so the first question to ask is
+ * the one with the most behind it.
+ */
+function InvestigationQueue({
+  profile,
+  trendById,
+  hasHistory,
+  platform,
+  durationOf,
+  total,
+}: {
+  profile: ProcessedProfile;
+  trendById: Map<string, TrendSummary | null>;
+  hasHistory: boolean;
+  platform: Platform | null;
+  durationOf: (sig: HangSignature) => number;
+  total: number;
+}) {
+  const { search } = useLocation();
+  const rows = useMemo(
+    () =>
+      INVESTIGATIONS.map((inv) => {
+        const sigs = narrowSignatures(
+          profile,
+          { ...investigationNarrowing(inv), filter: "", platform },
+          trendById,
+        );
+        let ms = 0;
+        let added = 0;
+        for (const sig of sigs) {
+          ms += durationOf(sig);
+          added += trendById.get(sig.id)?.deltaPerDay ?? 0;
+        }
+        return { inv, signatures: sigs.length, ms, added };
+      }),
+    [profile, trendById, platform, durationOf],
+  );
+  const linkTo = (inv: (typeof INVESTIGATIONS)[number]) => {
+    const current = new URLSearchParams(search);
+    const next = new URLSearchParams();
+    for (const keep of ["thread", "date", "platform"]) {
+      const v = current.get(keep);
+      if (v) {
+        next.set(keep, v);
+      }
+    }
+    for (const [key, value] of Object.entries(investigationNarrowing(inv))) {
+      if (value !== null && value !== "all") {
+        next.set(key, value);
+      }
+    }
+    if (inv.sort && inv.sort !== "time") {
+      next.set("sort", inv.sort);
+    }
+    return { pathname: "/top-hangs", search: `?${next}` };
+  };
+
+  return (
+    <div className="ov-card">
+      <div className="ov-card-head">
+        <h2>
+          Investigations
+          <InfoTip label="Investigations">
+            Common starting points, each a preset of the Top Hangs filters (also under{" "}
+            <b>Investigation</b> there). The figures are how many hangs each finds on
+            this build and their share of its hang time.
+            <span className="eg">
+              Credible increases also show the hang time they added per day against the
+              week before: a big rise on a small hang matters less than a modest one on
+              a heavy hang.
+            </span>
+          </InfoTip>
+        </h2>
+      </div>
+      <ul className="queue">
+        {rows.map(({ inv, signatures, ms, added }) => {
+          const unavailable = inv.needsHistory && !hasHistory;
+          return (
+            <li key={inv.id}>
+              {unavailable ? (
+                <span className="queue-row disabled" title="Needs the timeseries data">
+                  <span className="queue-label">{inv.label}</span>
+                  <span className="queue-stat">no history</span>
+                </span>
+              ) : (
+                <Link
+                  className={`queue-row${signatures === 0 ? " empty" : ""}`}
+                  to={linkTo(inv)}
+                  title={inv.blurb}
+                >
+                  <span className="queue-label">{inv.label}</span>
+                  <span className="queue-stat">
+                    {formatCount(signatures)} hang{signatures === 1 ? "" : "s"}
+                  </span>
+                  <span className="queue-stat">{formatShare(ms, total)}</span>
+                  <span className="queue-extra">
+                    {inv.id === "increases" && added > 0 ? formatDelta(added, "ms") : ""}
+                  </span>
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * What the numbers on this build do and don't cover, so a gap in the data
+ * isn't read as a change in the browser.
+ */
+function DataCard({
+  profile,
+  index,
+  trendById,
+  bugsFailed,
+  unattributed,
+  total,
+}: {
+  profile: ProcessedProfile;
+  index: TimeseriesIndex | undefined;
+  trendById: Map<string, TrendSummary | null>;
+  bugsFailed: boolean;
+  unattributed: number;
+  total: number;
+}) {
+  let history: React.ReactNode = "Not loaded, so trends are unavailable.";
+  if (index) {
+    const recorded = index.dates.filter((_, i) => index.dayHasData[i]);
+    let covered = 0;
+    for (const sig of profile.signatures) {
+      if (trendById.get(sig.id)) {
+        covered += sig.duration;
+      }
+    }
+    history = recorded.length ? (
+      <>
+        {formatDateRange(recorded[0], recorded[recorded.length - 1])}, with data on{" "}
+        {recorded.length} of {index.dates.length} days. Only each day&rsquo;s top
+        hangs are kept: they hold {formatShare(covered, profile.totalDuration)} of this
+        build&rsquo;s hang time, and a hang missing from a day may only have fallen
+        below the cut.
+      </>
+    ) : (
+      "No day in the window has data."
+    );
+  }
+  let tracked = 0;
+  for (const sig of profile.signatures) {
+    if (sig.knownBug) {
+      tracked += sig.duration;
+    }
+  }
+
+  return (
+    <div className="ov-card">
+      <div className="ov-card-head">
+        <h2>
+          About this data
+          <InfoTip label="About this data">
+            What this build&rsquo;s numbers cover. Counts and hang time depend on how
+            many people ran the build and how many reports arrived, so they compare
+            within a build better than across builds.
+          </InfoTip>
+        </h2>
+      </div>
+      <dl className="data-facts">
+        <dt>History</dt>
+        <dd>{history}</dd>
+        <dt>Bugs</dt>
+        <dd>
+          {bugsFailed
+            ? "The Bugzilla list didn't load, so hangs aren't merged by bug."
+            : `${formatShare(tracked, profile.totalDuration)} of hang time is in hangs a bug ` +
+              "tracks."}
+        </dd>
+        <dt>Areas</dt>
+        <dd>{formatShare(unattributed, total)} of hang time has no recognised area.</dd>
+        <dt>Clients</dt>
+        <dd>
+          {profile.affectedClientsTotal == null
+            ? "Affected-client counts aren't in this build's data."
+            : "Affected-client counts are shares of clients that sent hang reports, " +
+              "not of all users."}
+        </dd>
+      </dl>
     </div>
   );
 }

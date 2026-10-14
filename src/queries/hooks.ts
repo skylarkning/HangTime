@@ -13,6 +13,7 @@
  *    bug list's update time in the processing key drives that re-merge.
  */
 
+import { useMemo } from "react";
 import {
   useQuery,
   type UseQueryResult,
@@ -30,6 +31,9 @@ import { getProcessor } from "@/processing/client";
 import * as Comlink from "comlink";
 import type { Profile } from "@/data/schema";
 import type { ProcessedProfile } from "@/processing/types";
+import { computeTrend, type TrendSummary } from "@/data/trend";
+import type { Metric } from "@/data/timeseries";
+import { memberStacks } from "@/processing/signatureKey";
 
 const EMPTY_BUGS: BugMap = new Map();
 const BUGS_STALE_MS = 60 * 60 * 1000; // bugs change slowly
@@ -171,4 +175,29 @@ export function useProcessedProfile(thread: ThreadKind, date: DateSpec) {
     } as typeof processed;
   }
   return processed;
+}
+
+/**
+ * Every signature's trend on the metric, keyed by signature id (null when it
+ * has no history). Compared as of the build on screen, so an older build's
+ * trends describe that build rather than the latest days of the window.
+ */
+export function useTrendById(
+  profile: ProcessedProfile | undefined,
+  index: TimeseriesIndex | undefined,
+  metric: Metric,
+): Map<string, TrendSummary | null> {
+  return useMemo(() => {
+    const map = new Map<string, TrendSummary | null>();
+    if (!profile) {
+      return map;
+    }
+    index?.bind(profile);
+    const endDate = profile.date;
+    for (const sig of profile.signatures) {
+      const series = index?.resolveByStack(memberStacks(sig));
+      map.set(sig.id, series ? computeTrend(series, metric, { endDate }) : null);
+    }
+    return map;
+  }, [profile, index, metric]);
 }

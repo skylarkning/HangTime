@@ -1,16 +1,14 @@
 import { useEffect, useMemo } from "react";
-import { useBugs, useProcessedProfile, useTimeseries } from "@/queries/hooks";
+import { useBugs, useProcessedProfile, useTimeseries, useTrendById } from "@/queries/hooks";
 import { useViewState } from "@/state/useViewState";
 import { isLegacyStackId } from "@/state/permalink";
-import { filterSignatures } from "@/processing/select";
-import { computeTrend, trendCategory, type TrendSummary } from "@/data/trend";
+import { narrowSignatures, type Narrowing } from "@/processing/select";
 import type { Metric } from "@/data/timeseries";
 import { HangTable } from "@/components/HangTable";
 import { DetailPane } from "@/components/DetailPane";
 import { GroupMemberTable } from "@/components/GroupMemberTable";
 import { formatCount, formatPercentOfTotal, formatSeconds, formatShare } from "@/format";
 import type { ThreadKind } from "@/data/dataSource";
-import { memberStacks } from "@/processing/signatureKey";
 import { LoadingProgress } from "@/components/LoadingProgress";
 import { BuildBar } from "@/components/BuildBar";
 import { PLATFORMS, platformLabel, type Platform } from "@/data/platforms";
@@ -20,12 +18,16 @@ import {
   MECHANISMS,
   NO_AREA,
   areaLabel,
-  hasContext,
-  inArea,
   type AreaFilter,
   type ContextId,
   type MechanismId,
 } from "@/data/hangAreas";
+import {
+  INVESTIGATIONS,
+  currentInvestigation,
+  investigationNarrowing,
+} from "@/data/investigations";
+import type { BugFilter, ViewState } from "@/state/useViewState";
 import { byArea, byMechanism } from "@/data/areaBreakdown";
 
 export function Explorer() {
@@ -36,22 +38,7 @@ export function Explorer() {
 
   const metric: Metric = state.sort === "count" ? "count" : "ms";
 
-  const trendById = useMemo(() => {
-    const map = new Map<string, TrendSummary | null>();
-    if (!query.data) {
-      return map;
-    }
-    const index = timeseries.data;
-    index?.bind(query.data);
-    // Compare as of the build on screen, so an older build's trends describe
-    // that build rather than the latest days of the window.
-    const endDate = query.data.date;
-    for (const sig of query.data.signatures) {
-      const series = index?.resolveByStack(memberStacks(sig));
-      map.set(sig.id, series ? computeTrend(series, metric, { endDate }) : null);
-    }
-    return map;
-  }, [query.data, timeseries.data, metric]);
+  const trendById = useTrendById(query.data, timeseries.data, metric);
 
   // The near-duplicate group the list is narrowed to, if any. The list then
   // shows the group's stacks one by one (GroupMemberTable) instead of rows.
@@ -101,30 +88,24 @@ export function Explorer() {
     [query.data, measures],
   );
 
+  const narrowing: Narrowing = useMemo(
+    () => ({
+      filter: state.filter,
+      platform,
+      area: state.area,
+      mechanism: state.mechanism,
+      context: state.context,
+      trend: state.trend,
+      bug: state.bug,
+    }),
+    [state.filter, platform, state.area, state.mechanism, state.context, state.trend, state.bug],
+  );
+
   const filtered = useMemo(() => {
     if (!query.data) {
       return [];
     }
-    let sigs = filterSignatures(query.data, state.filter);
-    if (platform) {
-      sigs = sigs.filter((s) => countOf(s) > 0);
-    }
-    const { area, mechanism, context } = state;
-    if (area) {
-      sigs = sigs.filter((s) => inArea(s.kind, area));
-    }
-    if (mechanism) {
-      sigs = sigs.filter((s) => s.kind.mechanism === mechanism);
-    }
-    if (context) {
-      sigs = sigs.filter((s) => hasContext(s.annotationStats, s.count, context));
-    }
-    if (state.trend !== "all") {
-      sigs = sigs.filter((s) => {
-        const t = trendById.get(s.id);
-        return t != null && trendCategory(t) === state.trend;
-      });
-    }
+    const sigs = narrowSignatures(query.data, narrowing, trendById);
     if (state.trend === "increase") {
       // A big rise on a hang that barely registers matters less than a modest
       // one on a heavy hang, so credible increases rank by what they added.
@@ -133,23 +114,16 @@ export function Explorer() {
     }
     const value = metric === "count" ? countOf : durationOf;
     return [...sigs].sort((a, b) => value(b) - value(a));
-  }, [
-    query.data,
-    state.filter,
-    state.trend,
-    state.area,
-    state.mechanism,
-    state.context,
-    trendById,
-    metric,
-    platform,
-    countOf,
-    durationOf,
-  ]);
+  }, [query.data, narrowing, trendById, state.trend, metric, countOf, durationOf]);
 
   // Narrowed by anything but the platform, the summary counts what is shown.
   const narrowed =
-    !!state.filter || !!state.area || !!state.mechanism || !!state.context || state.trend !== "all";
+    !!state.filter ||
+    !!state.area ||
+    !!state.mechanism ||
+    !!state.context ||
+    !!state.bug ||
+    state.trend !== "all";
   const shownTotals = useMemo(() => {
     let duration = 0;
     let count = 0;
@@ -234,11 +208,10 @@ export function Explorer() {
         )}
         <div className="filter-bar">
           <AreaFilters
-            area={state.area}
-            mechanism={state.mechanism}
-            context={state.context}
+            narrowing={narrowing}
             areaRows={areaRows}
             mechanismRows={mechanismRows}
+            hasHistory={!!timeseries.data}
             disabled={!!group}
             onChange={update}
           />
@@ -395,26 +368,30 @@ export function Explorer() {
  * is one choice away.
  */
 function AreaFilters({
-  area,
-  mechanism,
-  context,
+  narrowing,
   areaRows,
   mechanismRows,
+  hasHistory,
   disabled,
   onChange,
 }: {
-  area: AreaFilter | null;
-  mechanism: MechanismId | null;
-  context: ContextId | null;
+  narrowing: Narrowing;
   areaRows: { key: AreaFilter; label: string; ms: number }[];
   mechanismRows: { key: MechanismId; label: string; ms: number }[];
+  hasHistory: boolean;
   disabled: boolean;
-  onChange: (patch: {
-    area?: AreaFilter | null;
-    mechanism?: MechanismId | null;
-    context?: ContextId | null;
-  }) => void;
+  onChange: (patch: Partial<ViewState>) => void;
 }) {
+  const { area, mechanism, context, bug } = narrowing;
+  const investigation = currentInvestigation(narrowing);
+  const custom =
+    !investigation &&
+    (!!narrowing.filter ||
+      !!area ||
+      !!mechanism ||
+      !!context ||
+      !!bug ||
+      narrowing.trend !== "all");
   const total = areaRows.reduce((sum, row) => sum + row.ms, 0);
   const share = (ms: number) => formatShare(ms, total);
   // Keep the current choice listed even when nothing in view matches it.
@@ -433,6 +410,36 @@ function AreaFilters({
 
   return (
     <div className="area-filters">
+      <label
+        className="control investigation-control"
+        title={title ?? investigation?.blurb ?? "Start from a common triage question"}
+      >
+        Investigation
+        <select
+          value={investigation?.id ?? (custom ? "custom" : "all")}
+          disabled={disabled}
+          onChange={(e) => {
+            const picked = INVESTIGATIONS.find((inv) => inv.id === e.target.value);
+            onChange({
+              ...investigationNarrowing(picked ?? null),
+              filter: "",
+              ...(picked?.sort ? { sort: picked.sort } : {}),
+            });
+          }}
+        >
+          <option value="all">All hangs</option>
+          {INVESTIGATIONS.map((inv) => (
+            <option key={inv.id} value={inv.id} disabled={inv.needsHistory && !hasHistory}>
+              {inv.label}
+            </option>
+          ))}
+          {custom && (
+            <option value="custom" disabled>
+              Custom filters
+            </option>
+          )}
+        </select>
+      </label>
       <label className="control" title={title ?? "Show only hangs in one area of the browser"}>
         Area
         <select
@@ -490,6 +497,20 @@ function AreaFilters({
               {CONTEXTS[key].label}
             </option>
           ))}
+        </select>
+      </label>
+      <label className="control" title={title ?? "Show only hangs with, or without, a bug"}>
+        Bug
+        <select
+          value={bug ?? "all"}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ bug: e.target.value === "all" ? null : (e.target.value as BugFilter) })
+          }
+        >
+          <option value="all">Any</option>
+          <option value="untracked">No bug yet</option>
+          <option value="tracked">Has a bug</option>
         </select>
       </label>
     </div>
